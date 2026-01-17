@@ -294,15 +294,21 @@ elif df_final is not None:
     k4.metric("Resultado Técnico", f"${res_tec/escala:,.2f}B")
     st.markdown("---")
 
-    # --- PESTAÑAS ---
+    # --- PESTAÑAS CON LAZY LOADING ---
     tab1, tab2, tab3, tab4 = st.tabs(["🌎 Mapa de Guerra", "📦 Productos", "🧠 GENERADOR INFORME (PDF)", "🎯 Profundización"])
 
     # --- TAB 1: GEOGRÁFICO ---
     with tab1:
+        @st.cache_data(show_spinner=False)
+        def get_geo_data(df):
+            anios_default = sorted(df['Año'].unique())
+            return anios_default
+        
         st.subheader("Análisis de Territorio")
         c1, c2 = st.columns([2, 1])
         
-        anios = st.multiselect("Filtrar Año", sorted(df_final['Año'].unique()), default=sorted(df_final['Año'].unique()))
+        anios_disponibles = get_geo_data(df_final)
+        anios = st.multiselect("Filtrar Año", anios_disponibles, default=anios_disponibles)
         df_geo = df_final[df_final['Año'].isin(anios)]
         
         pais_df = df_geo.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
@@ -310,44 +316,56 @@ elif df_final is not None:
         pais_df['Primas_M'] = pais_df['Primas']/1e6
 
         with c1:
-            fig = px.scatter(pais_df, x='Primas_M', y='Siniestralidad', size='Primas_M', color='País',
-                             title="Matriz de Desempeño (Volumen vs Riesgo)", size_max=60)
+            fig = px.scatter(pais_df, x='Primas_M', y='Siniestralidad', 
+                           size='Primas_M', color='País',
+                           title="Matriz de Desempeño (Todos los Países)", size_max=60)
             fig.add_hline(y=65, line_dash="dash", line_color="red", annotation_text="Límite Riesgo")
             st.plotly_chart(fig, use_container_width=True)
             
         with c2:
             st.markdown("**Top Mercados**")
             st.dataframe(pais_df.sort_values('Primas', ascending=False)[['País','Primas','Siniestralidad']]
-                         .style.format({'Primas':'${:,.0f}','Siniestralidad':'{:.1f}%'}), hide_index=True, use_container_width=True)
+                         .style.format({'Primas':'${:,.0f}','Siniestralidad':'{:.1f}%'}), 
+                         hide_index=True, use_container_width=True)
             
-        st.subheader("Detalle por Compañía")
-        st.dataframe(df_geo.groupby(['País','Compañía'])['Primas'].sum().reset_index().sort_values(['País','Primas'], ascending=[True,False]), use_container_width=True)
+        st.subheader("Detalle por Compañía (Completo)")
+        detail = df_geo.groupby(['País','Compañía'])['Primas'].sum().reset_index().sort_values(['País','Primas'], ascending=[True,False])
+        st.dataframe(detail, use_container_width=True)
 
     # --- TAB 2: PRODUCTOS ---
     with tab2:
+        @st.cache_data(show_spinner=False)
+        def get_product_data(df):
+            ramo_df = df.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
+            ramo_df['Ratio'] = (ramo_df['Siniestros']/ramo_df['Primas'])*100
+            afi = df.groupby('AFILIADO')['Primas'].sum().reset_index()
+            return ramo_df, afi
+        
         st.subheader("Rentabilidad por Producto")
-        ramo_df = df_final.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
-        ramo_df['Ratio'] = (ramo_df['Siniestros']/ramo_df['Primas'])*100
+        ramo_df, afi = get_product_data(df_final)
         
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            fig_bar = px.bar(ramo_df.sort_values('Primas', ascending=False), x='Ramo', y='Primas', color='Ratio',
-                             color_continuous_scale='RdYlGn_r', title="Primas y Siniestralidad por Ramo")
+            fig_bar = px.bar(ramo_df.sort_values('Primas', ascending=False), 
+                           x='Ramo', y='Primas', color='Ratio',
+                           color_continuous_scale='RdYlGn_r', 
+                           title="Todos los Ramos: Primas y Siniestralidad")
             st.plotly_chart(fig_bar, use_container_width=True)
         with col_p2:
-            afi = df_final.groupby('AFILIADO')['Primas'].sum().reset_index()
-            fig_pie = px.pie(afi, values='Primas', names='AFILIADO', title="Distribución Afiliados", 
-                             color_discrete_map={'AFILIADO':'#004A8F', 'NO AFILIADO':'#BDBDBD'})
+            fig_pie = px.pie(afi, values='Primas', names='AFILIADO', 
+                           title="Distribución Afiliados", 
+                           color_discrete_map={'AFILIADO':'#004A8F', 'NO AFILIADO':'#BDBDBD'})
             st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- TAB 3: GENERADOR PDF IA (EL NÚCLEO) ---
+    # --- TAB 3: GENERADOR PDF IA ---
     with tab3:
         st.header("🧠 Generador de Informe de Conquista 2026")
-        st.info("Este módulo utiliza Inteligencia Artificial para redactar un Plan de Acción como si fueras TÚ (Diego) presentándoselo a tu Jefe.")
+        st.info("Este módulo utiliza IA para redactar un Plan de Acción estratégico.")
         
         c_ai1, c_ai2 = st.columns([2, 1])
         with c_ai1:
-            foco = st.text_area("🎯 Instrucción Especial (Opcional)", placeholder="Ej: Quiero enfocarme en recuperar la rentabilidad en México atacando a los No Afiliados...")
+            foco = st.text_area("🎯 Instrucción Especial (Opcional)", 
+                              placeholder="Ej: Enfocarme en México y reducir siniestralidad...")
         
         with c_ai2:
             st.write("")
@@ -360,32 +378,32 @@ elif df_final is not None:
             else:
                 with st.status("🛠️ Fabricando tu Plan de Conquista...", expanded=True) as status:
                     try:
-                        # 1. PREPARAR DATOS PARA LA IA
                         status.write("🔍 Extrayendo inteligencia de mercado...")
-                        top_paises = pais_df.sort_values('Primas', ascending=False).head(3)['País'].tolist()
-                        top_risk = pais_df.sort_values('Siniestralidad', ascending=False).head(3)['País'].tolist()
-                        opportunities = pais_df[(pais_df['Siniestralidad'] < 50) & (pais_df['Primas'] > 1000000)]['País'].tolist()
+                        pais_analisis = df_final.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
+                        pais_analisis['Siniestralidad'] = (pais_analisis['Siniestros']/pais_analisis['Primas'])*100
+                        
+                        top_paises = pais_analisis.sort_values('Primas', ascending=False).head(3)['País'].tolist()
+                        top_risk = pais_analisis.sort_values('Siniestralidad', ascending=False).head(3)['País'].tolist()
+                        opportunities = pais_analisis[(pais_analisis['Siniestralidad'] < 50) & 
+                                                     (pais_analisis['Primas'] > 1000000)]['País'].tolist()
                         
                         prompt_system = (
-                            "Eres Lina Marcela Contreras, un Consultor de Negocios Senior y Estratega Comercial en ALSUM. "
-                            "Estás escribiendo un ANALISIS DIRECTO Y PROPOSITIVO para la Gerencia General (Tu Jefe). "
-                            "NO actúes como un robot. Actúa como un líder comercial con hambre de éxito. "
-                            "Tu objetivo: Presentar un plan claro para DOMINAR el mercado en 2026."
+                            "Eres Lina Marcela Contreras, Estratega Comercial Senior en ALSUM. "
+                            "Escribes un análisis directo y propositivo para la Gerencia General. "
+                            "Tu objetivo: Presentar un plan claro para dominar el mercado en 2026."
                         )
                         
                         prompt_user = (
                             f"Datos Clave: Primas ${primas_tot/1e9:.2f}B USD. Siniestralidad {ratio_global:.1f}%. "
                             f"Mercados Grandes: {', '.join(top_paises)}. Mercados Riesgosos: {', '.join(top_risk)}. "
-                            f"Oportunidades Rentables: {', '.join(opportunities)}. "
-                            f"Instrucción Adicional: {foco}. "
-                            "\n\nEscribe el informe en estas 3 secciones (Usa un tono profesional, persuasivo y comercial): "
-                            "1. **DIAGNÓSTICO REALISTA:** ¿Dónde estamos parados? (Sé honesto sobre los riesgos). "
-                            "2. **MI ESTRATEGIA DE ATAQUE 2026:** ¿Qué voy a hacer YO (Diego) para traer más dinero? (Habla de atacar 'No Afiliados' y crecer en zonas rentables). "
-                            "3. **COMPROMISO DE CIERRE:** Una frase final contundente sobre el éxito que lograremos."
+                            f"Oportunidades: {', '.join(opportunities)}. Instrucción: {foco}. "
+                            "\n\nEscribe en 3 secciones: "
+                            "1. DIAGNÓSTICO REALISTA (riesgos actuales) "
+                            "2. ESTRATEGIA DE ATAQUE 2026 (cómo traer más dinero) "
+                            "3. COMPROMISO DE CIERRE (mensaje contundente)"
                         )
 
-                        # 2. LLAMADA A LA IA
-                        status.write("🧠 Redactando estrategia ganadora (OpenAI)...")
+                        status.write("🧠 Redactando estrategia (OpenAI)...")
                         client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                         resp = client.chat.completions.create(
                             model="gpt-4o-mini",
@@ -397,106 +415,115 @@ elif df_final is not None:
                         )
                         texto_estrategia = resp.choices[0].message.content
 
-                        # 3. CONSTRUIR PDF (SIN IMÁGENES)
-                        status.write("📄 Ensamblando documento final...")
+                        status.write("📄 Ensamblando PDF...")
                         pdf = UltimatePDF()
                         pdf.cover_page("PLAN DE DOMINACIÓN 2026", "ESTRATEGIA PARA LA EXPANSIÓN DE MERCADO")
                         
-                        # Página 1: KPIs y Estrategia
                         pdf.add_page()
                         pdf.section_title("1. TABLERO DE CONTROL (KPIs)")
                         y_kpi = pdf.get_y() + 5
                         pdf.add_metric_box("PRIMAS (B)", f"${primas_tot/1e9:.2f}", 15, y_kpi)
                         pdf.add_metric_box("SINIESTROS (B)", f"${siniestros_tot/1e9:.2f}", 65, y_kpi)
-                        pdf.add_metric_box("SINIESTRALIDAD", f"{ratio_global:.1f}%", 115, y_kpi, bg_color=(255, 230, 230) if ratio_global > 65 else (230, 255, 230))
+                        pdf.add_metric_box("SINIESTRALIDAD", f"{ratio_global:.1f}%", 115, y_kpi, 
+                                         bg_color=(255, 230, 230) if ratio_global > 65 else (230, 255, 230))
                         pdf.ln(40)
                         
                         pdf.section_title("2. CARTA ESTRATÉGICA A LA GERENCIA")
                         pdf.chapter_body(texto_estrategia)
 
-                        # Página 2: La Lista de Caza
                         pdf.add_page()
                         pdf.section_title("3. LISTA DE OBJETIVOS (TOP PROSPECTS)")
-                        pdf.chapter_body("He identificado las siguientes cuentas clave con alto volumen y rentabilidad saludable. Estas son mi prioridad de ataque para Q1 2026:")
+                        pdf.chapter_body("Cuentas clave con alto volumen y rentabilidad saludable (prioridad Q1 2026):")
                         pdf.ln(5)
                         
-                        # Lógica de Prospectos
                         prospects = df_final.groupby(['País', 'Compañía'])[['Primas','Siniestros']].sum().reset_index()
                         prospects['Ratio'] = (prospects['Siniestros']/prospects['Primas'])*100
-                        targets = prospects[(prospects['Primas']>50000) & (prospects['Ratio']<60)].sort_values('Primas', ascending=False).head(20)
+                        targets = prospects[(prospects['Primas']>50000) & 
+                                          (prospects['Ratio']<60)].sort_values('Primas', ascending=False)
                         
-                        # Formato tabla
                         tabla_pdf = targets.copy()
                         tabla_pdf['Primas'] = tabla_pdf['Primas'].apply(lambda x: f"${x/1e6:.1f}M")
                         tabla_pdf['Ratio'] = tabla_pdf['Ratio'].apply(lambda x: f"{x:.1f}%")
                         pdf.create_table(tabla_pdf[['País', 'Compañía', 'Primas', 'Ratio']])
                         
-                        # Output
                         pdf_bytes = bytes(pdf.output(dest='S'))
                         
-                        status.update(label="✅ ¡MISIÓN CUMPLIDA! Tu informe está listo.", state="complete", expanded=False)
+                        status.update(label="✅ ¡MISIÓN CUMPLIDA! Tu informe está listo.", 
+                                    state="complete", expanded=False)
                         st.balloons()
                         
                         st.download_button(
-                            label="📥 DESCARGAR PLAN MAESTRO PDF (Para Entregar al Jefe)",
+                            label="📥 DESCARGAR PLAN MAESTRO PDF",
                             data=pdf_bytes,
-                            file_name="Plan_Estrategico_Diego_2026.pdf",
+                            file_name="Plan_Estrategico_2026.pdf",
                             mime="application/pdf",
                             type="primary"
                         )
 
                     except Exception as e:
-                        st.error(f"Error crítico en la generación: {e}")
+                        st.error(f"Error crítico: {e}")
 
-    # --- TAB 4: PROFUNDIZACIÓN (NADA FALTA) ---
+    # --- TAB 4: PROFUNDIZACIÓN ---
     with tab4:
-        st.header("Análisis de Profundización Total")
+        @st.cache_data(show_spinner=False)
+        def get_deep_analysis(df):
+            comp = df.groupby(['Compañía'])[['Primas','Siniestros']].sum().reset_index()
+            comp['Ratio'] = (comp['Siniestros']/comp['Primas'])*100
+            
+            heat = df.groupby(['Ramo','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
+            heat['Ratio'] = (heat['Siniestros']/heat['Primas'])*100
+            
+            trend = df.groupby('Año')[['Primas','Siniestros']].sum().reset_index()
+            
+            return comp, heat, trend
         
-        # 1. Top Compañías
-        st.subheader("Top 15 Compañías Globales")
-        comp = df_final.groupby(['Compañía'])[['Primas','Siniestros']].sum().reset_index()
-        comp['Ratio'] = (comp['Siniestros']/comp['Primas'])*100
-        fig_comp = px.bar(comp.sort_values('Primas', ascending=False).head(15), x='Primas', y='Compañía', orientation='h', 
-                          color='Ratio', color_continuous_scale='RdYlGn_r')
+        st.header("Análisis de Profundización Total")
+        comp, heat, trend = get_deep_analysis(df_final)
+        
+        st.subheader("Todas las Compañías Globales")
+        fig_comp = px.bar(comp.sort_values('Primas', ascending=False), 
+                         x='Primas', y='Compañía', orientation='h', 
+                         color='Ratio', color_continuous_scale='RdYlGn_r')
         fig_comp.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_comp, use_container_width=True)
         
         c_deep1, c_deep2 = st.columns(2)
         
-        # 2. Heatmap
         with c_deep1:
             st.subheader("Mapa de Calor (Riesgo)")
-            heat = df_final.groupby(['Ramo','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
-            heat['Ratio'] = (heat['Siniestros']/heat['Primas'])*100
-            fig_heat = px.density_heatmap(heat, x='AFILIADO', y='Ramo', z='Ratio', color_continuous_scale='RdYlGn_r')
+            fig_heat = px.density_heatmap(heat, x='AFILIADO', y='Ramo', z='Ratio', 
+                                         color_continuous_scale='RdYlGn_r')
             st.plotly_chart(fig_heat, use_container_width=True)
             
-        # 3. Treemap
         with c_deep2:
-            st.subheader("Estructura de Cartera")
-            fig_tree = px.treemap(df_final[df_final['Primas']>0], path=[px.Constant("Global"), 'País', 'Ramo'], values='Primas')
+            st.subheader("Estructura de Cartera (Completa)")
+            fig_tree = px.treemap(df_final[df_final['Primas']>0], 
+                                path=[px.Constant("Global"), 'País', 'Ramo'], 
+                                values='Primas')
             st.plotly_chart(fig_tree, use_container_width=True)
             
-        # 4. Tendencia
         st.subheader("Evolución Histórica")
-        trend = df_final.groupby('Año')[['Primas','Siniestros']].sum().reset_index()
         fig_line = px.line(trend, x='Año', y=['Primas','Siniestros'], markers=True)
         st.plotly_chart(fig_line, use_container_width=True)
         
-        # 5. BUSCADOR DE CLIENTES (RADAR)
         st.markdown("---")
-        st.subheader("🎯 Radar de Oportunidades (Buscador)")
+        st.subheader("🎯 Radar de Oportunidades")
         cf1, cf2, cf3 = st.columns(3)
-        with cf1: p_radar = st.multiselect("País Objetivo", sorted(df_final['País'].unique()), key='rd_p')
-        with cf2: r_radar = st.slider("Máximo Riesgo (%)", 0, 100, 60, key='rd_r')
-        with cf3: v_radar = st.number_input("Mínimo Primas USD", value=10000, step=10000, key='rd_v')
+        with cf1: 
+            p_radar = st.multiselect("País Objetivo", sorted(df_final['País'].unique()), key='rd_p')
+        with cf2: 
+            r_radar = st.slider("Máximo Riesgo (%)", 0, 100, 60, key='rd_r')
+        with cf3: 
+            v_radar = st.number_input("Mínimo Primas USD", value=10000, step=10000, key='rd_v')
         
         base_radar = df_final.groupby(['País','Compañía','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
         base_radar['Ratio'] = (base_radar['Siniestros']/base_radar['Primas'])*100
         
         mask = (base_radar['Primas']>=v_radar) & (base_radar['Ratio']<=r_radar)
-        if p_radar: mask = mask & (base_radar['País'].isin(p_radar))
+        if p_radar: 
+            mask = mask & (base_radar['País'].isin(p_radar))
         
         final_radar = base_radar[mask].sort_values('Primas', ascending=False)
         st.dataframe(final_radar.style.format({'Primas':'${:,.0f}','Siniestros':'${:,.0f}','Ratio':'{:.1f}%'})
-                     .background_gradient(subset=['Ratio'], cmap='RdYlGn_r'), use_container_width=True)
+                     .background_gradient(subset=['Ratio'], cmap='RdYlGn_r'), 
+                     use_container_width=True)
