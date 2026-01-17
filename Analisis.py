@@ -186,42 +186,63 @@ class UltimatePDF(FPDF):
 @st.cache_data(show_spinner=False)
 def load_data_universal(file):
     try:
-        expected_cols = ["Compañía", "País", "Tipo", "Ramo", "Subramo", "Moneda local", "USD", "Año", "Tasa de Cambio", "AFILIADO"]
-        
         if file.name.endswith('.csv'):
             file.seek(0)
-            df = pd.read_csv(file, sep=';', engine='python', on_bad_lines='skip', encoding='utf-8')
-            # Limpiar nombres de columnas
+            df = pd.read_csv(
+                file,
+                sep=';',
+                engine='python',
+                usecols=range(10),
+                on_bad_lines='skip',
+                encoding='utf-8',
+                header=0
+            )
             df.columns = [c.strip() for c in df.columns]
-            # Filtrar columnas necesarias si existen
-            cols_existentes = [c for c in expected_cols if c in df.columns]
-            df = df[cols_existentes]
         else:
-            df = pd.read_excel(file, header=0)
+            df = pd.read_excel(file, engine='openpyxl', header=0, usecols="A:J")
             df.columns = [c.strip() for c in df.columns]
 
-        # Conversiones
+        # Limpieza básica
         df['Compañía'] = df['Compañía'].astype(str).str.strip()
-        if 'Subramo' in df.columns: df['Subramo'] = df['Subramo'].fillna('General')
-        if 'Ramo' in df.columns: df['Ramo'] = df['Ramo'].fillna('Otros')
+        if 'Subramo' in df.columns:
+            df['Subramo'] = df['Subramo'].fillna('General')
+        if 'Ramo' in df.columns:
+            df['Ramo'] = df['Ramo'].fillna('Otros')
 
-        cols_dinero = ['Moneda local', 'USD']
-        for col in cols_dinero:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # La columna USD ya está convertida - solo parseamos formato
+        def parse_numero_latino(val):
+            if pd.isna(val):
+                return 0.0
+            texto = str(val).strip()
+            # Si es número directo (sin separadores), convertir
+            try:
+                return float(texto)
+            except:
+                # Si tiene separadores latinos . = miles, , = decimal
+                texto = texto.replace('.', '').replace(',', '.')
+                try:
+                    return float(texto)
+                except:
+                    return 0.0
 
+        df['USD'] = df['USD'].apply(parse_numero_latino)
+
+        # Crear tabla pivote
         pivot_df = df.pivot_table(
             index=['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO'],
             columns='Tipo', values='USD', aggfunc='sum', fill_value=0
         ).reset_index()
 
         pivot_df.columns.name = None
-        if 'Primas' not in pivot_df.columns: pivot_df['Primas'] = 0.0
-        if 'Siniestros' not in pivot_df.columns: pivot_df['Siniestros'] = 0.0
+        if 'Primas' not in pivot_df.columns:
+            pivot_df['Primas'] = 0.0
+        if 'Siniestros' not in pivot_df.columns:
+            pivot_df['Siniestros'] = 0.0
 
         pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
-        pivot_df['Siniestralidad'] = (pivot_df['Siniestros'] / pivot_df['Primas']).replace([float('inf'), -float('inf')], 0) * 100
+        pivot_df['Siniestralidad'] = (
+            pivot_df['Siniestros'] / pivot_df['Primas']
+        ).replace([float('inf'), -float('inf')], 0) * 100
         pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
 
         return pivot_df, None
@@ -237,12 +258,12 @@ with st.sidebar:
     st.header("Centro de Mando")
     st.info("📊 ALSUM Intelligence System")
     
-    # Cargador de archivo CSV
-    uploaded_file = st.file_uploader("📂 Cargar base de datos CSV", type=['csv'], help="Sube el archivo hsbhsbhs.csv")
+    # Cargador de archivo Excel
+    uploaded_file = st.file_uploader("📂 Cargar base de datos", type=['xlsx', 'csv'], help="Sube el archivo Excel o CSV")
 
 # --- CARGA ---
 if uploaded_file is None:
-    st.warning("⚠️ Por favor, carga el archivo CSV desde el panel lateral para continuar.")
+    st.warning("⚠️ Por favor, carga el archivo desde el panel lateral para continuar.")
     st.stop()
 
 try:
@@ -258,7 +279,7 @@ if error:
 elif df_final is not None:
     
     # --- KPIs ---
-    escala = 1e9
+    escala = 1e9  # Miles de millones (Billions)
     primas_tot = df_final['Primas'].sum()
     siniestros_tot = df_final['Siniestros'].sum()
     ratio_global = (siniestros_tot / primas_tot) * 100 if primas_tot > 0 else 0
@@ -267,10 +288,10 @@ elif df_final is not None:
     st.title(f"🚀 Plan Estratégico & Comercial {datetime.date.today().year}")
     
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Volumen Primas", f"${primas_tot/escala:,.2f} B")
-    k2.metric("Siniestros Totales", f"${siniestros_tot/escala:,.2f} B")
+    k1.metric("Volumen Primas", f"${primas_tot/escala:,.2f}B")
+    k2.metric("Siniestros Totales", f"${siniestros_tot/escala:,.2f}B")
     k3.metric("Siniestralidad", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta", delta_color="normal" if ratio_global < 65 else "inverse")
-    k4.metric("Resultado Técnico", f"${res_tec/escala:,.2f} B")
+    k4.metric("Resultado Técnico", f"${res_tec/escala:,.2f}B")
     st.markdown("---")
 
     # --- PESTAÑAS ---
@@ -353,7 +374,7 @@ elif df_final is not None:
                         )
                         
                         prompt_user = (
-                            f"Datos Clave: Primas ${primas_tot/1e9:.2f}B. Siniestralidad {ratio_global:.1f}%. "
+                            f"Datos Clave: Primas ${primas_tot/1e9:.2f}B USD. Siniestralidad {ratio_global:.1f}%. "
                             f"Mercados Grandes: {', '.join(top_paises)}. Mercados Riesgosos: {', '.join(top_risk)}. "
                             f"Oportunidades Rentables: {', '.join(opportunities)}. "
                             f"Instrucción Adicional: {foco}. "
