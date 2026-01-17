@@ -236,15 +236,20 @@ with st.sidebar:
     st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)
     st.header("Centro de Mando")
     st.info("📊 ALSUM Intelligence System")
-    archivo_nombre = "hsbhsbhs.csv" 
+    
+    # Cargador de archivo CSV
+    uploaded_file = st.file_uploader("📂 Cargar base de datos CSV", type=['csv'], help="Sube el archivo hsbhsbhs.csv")
 
 # --- CARGA ---
+if uploaded_file is None:
+    st.warning("⚠️ Por favor, carga el archivo CSV desde el panel lateral para continuar.")
+    st.stop()
+
 try:
     with st.spinner('Inicializando protocolos de análisis...'):
-        with open(archivo_nombre, "rb") as f:
-            df_final, error = load_data_universal(f)
-except FileNotFoundError:
-    st.error(f"❌ Archivo '{archivo_nombre}' no encontrado. Verifica la ruta.")
+        df_final, error = load_data_universal(uploaded_file)
+except Exception as e:
+    st.error(f"❌ Error al cargar archivo: {e}")
     st.stop()
 
 if error:
