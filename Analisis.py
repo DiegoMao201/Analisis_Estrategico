@@ -295,7 +295,7 @@ elif df_final is not None:
     st.markdown("---")
 
     # --- PESTAÑAS CON LAZY LOADING ---
-    tab1, tab2, tab3, tab4 = st.tabs(["🌎 Mapa de Guerra", "📦 Productos", "🧠 GENERADOR INFORME (PDF)", "🎯 Profundización"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🌎 Mapa de Analisis", "📦 Productos", "🧠 GENERADOR INFORME (PDF)", "🎯 Profundización"])
 
     # --- TAB 1: GEOGRÁFICO ---
     with tab1:
