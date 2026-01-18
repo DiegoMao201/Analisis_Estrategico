@@ -408,7 +408,7 @@ elif df_final is not None:
                 })
                 .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r', vmin=0, vmax=100)
                 .bar(subset=['Primas'], color='#004A8F', align='zero')
-                .bar(subset=['Resultado Técnico'], color=['#d65f5f' if v < 0 else '#6acc64' for v in comp_geo['Resultado Técnico']], align='zero'),
+                .bar(subset=['Resultado Técnico'], color=['#d65f5f', '#6acc64'], align='zero'),
             use_container_width=True, hide_index=True,
             column_config={
                 "Compañía": st.column_config.TextColumn("Compañía", width="medium"),
