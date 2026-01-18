@@ -389,19 +389,54 @@ elif df_final is not None:
             )
             st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Análisis Inteligente</div>{analisis_tabla}</div>""", unsafe_allow_html=True)
 
-        st.markdown("### Compañías (depende de filtros globales)")
+        st.markdown("### Compañías")
         comp_geo = df_geo.groupby('Compañía')[['Primas','Siniestros']].sum().reset_index()
         comp_geo['Siniestralidad'] = (comp_geo['Siniestros']/comp_geo['Primas'])*100
+        comp_geo['Resultado Técnico'] = comp_geo['Primas'] - comp_geo['Siniestros']
+        comp_geo['Participación (%)'] = (comp_geo['Primas'] / df_geo['Primas'].sum()) * 100
         comp_geo = comp_geo.sort_values('Primas', ascending=False)
-        st.subheader("Compañías priorizadas")
+        
+        st.subheader("Panel de Control de Compañías")
         st.dataframe(
             comp_geo.style
-                .format({'Primas':'${:,.0f}', 'Siniestros':'${:,.0f}', 'Siniestralidad':'{:.1f}%'})
-                .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r')
-                .bar(subset=['Primas','Siniestros'], color='#004A8F', align='zero'),
-            use_container_width=True, hide_index=True
+                .format({
+                    'Primas':'${:,.0f}', 
+                    'Siniestros':'${:,.0f}', 
+                    'Resultado Técnico':'${:,.0f}',
+                    'Siniestralidad':'{:.1f}%',
+                    'Participación (%)':'{:.2f}%'
+                })
+                .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r', vmin=0, vmax=100)
+                .bar(subset=['Primas'], color='#004A8F', align='zero')
+                .bar(subset=['Resultado Técnico'], color=['#d65f5f' if v < 0 else '#6acc64' for v in comp_geo['Resultado Técnico']], align='zero'),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "Compañía": st.column_config.TextColumn("Compañía", width="medium"),
+                "Primas": st.column_config.ProgressColumn("Primas (Volumen)", format="$%d", min_value=0, max_value=int(comp_geo['Primas'].max())),
+                "Resultado Técnico": st.column_config.NumberColumn("Resultado Técnico", help="Primas - Siniestros. Verde=Ganancia, Rojo=Pérdida"),
+                "Siniestralidad": st.column_config.NumberColumn("Siniestralidad (%)", help="Siniestros / Primas. Rojo es alto riesgo."),
+                "Participación (%)": st.column_config.NumberColumn("Cuota de Mercado")
+            }
         )
-        st.caption("Volumen (barras azules) y siniestralidad (color). Ordenadas por primas para focalizar la ejecución.")
+        st.caption("Panel interactivo para identificar líderes de mercado (volumen), rentabilidad (resultado) y riesgo (siniestralidad).")
+
+        # >>> IA ANÁLISIS DE COMPAÑÍAS <<<
+        datos_companias = comp_geo.head(5).to_string(
+            columns=['Compañía', 'Primas', 'Siniestralidad', 'Resultado Técnico', 'Participación (%)'],
+            formatters={'Primas':'${:,.0f}'.format, 'Siniestralidad':'{:.1f}%'.format, 'Resultado Técnico':'${:,.0f}'.format, 'Participación (%)':'{:.1f}%'.format}
+        )
+        
+        prompt_companias = (
+            "Eres un Director de Estrategia Comercial. Analiza esta tabla de compañías de seguros. "
+            "Identifica la mejor oportunidad de negocio (puede ser un líder para fortalecer o un competidor para atacar). "
+            "Usa porcentajes y cifras para justificar tu elección. Sé directo y accionable."
+        )
+        
+        analisis_companias = generar_analisis_ia(
+            f"Tabla de Compañías (Top 5 por Primas):\n{datos_companias}",
+            prompt_companias
+        )
+        st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Decisión Estratégica</div>{analisis_companias}</div>""", unsafe_allow_html=True)
 
     # ==========================================
     # TAB 2: PRODUCTOS (+ IA)
