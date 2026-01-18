@@ -301,10 +301,33 @@ if error:
     st.stop()
 
 elif df_final is not None:
+    # --- FILTROS GLOBALES ---
+    anios_disp = sorted(df_final['Año'].unique())
+    ramos_disp = sorted(df_final['Ramo'].unique())
+
+    st.sidebar.markdown("### Filtros globales")
+    filtro_anios = st.sidebar.multiselect("Año", anios_disp, default=anios_disp)
+    filtro_afiliado = st.sidebar.radio("Afiliación", ["Todos", "Afiliados", "No afiliados"], horizontal=False)
+    filtro_ramos = st.sidebar.multiselect("Ramo", ramos_disp, default=ramos_disp)
+
+    df_filtrado = df_final.copy()
+    if filtro_anios:
+        df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+    if filtro_afiliado == "Afiliados":
+        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']
+    elif filtro_afiliado == "No afiliados":
+        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']
+    if filtro_ramos:
+        df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
+
+    if df_filtrado.empty:
+        st.error("❌ No hay datos para los filtros seleccionados.")
+        st.stop()
+
     # --- KPIs GLOBALES ---
     escala = 1e9
-    primas_tot = df_final['Primas'].sum()
-    siniestros_tot = df_final['Siniestros'].sum()
+    primas_tot = df_filtrado['Primas'].sum()
+    siniestros_tot = df_filtrado['Siniestros'].sum()
     ratio_global = (siniestros_tot / primas_tot) * 100 if primas_tot > 0 else 0
     res_tec = primas_tot - siniestros_tot
 
@@ -327,9 +350,8 @@ elif df_final is not None:
         st.subheader("Análisis de Territorio")
         c1, c2 = st.columns([2, 1])
         
-        anios = st.multiselect("Filtrar Año", sorted(df_final['Año'].unique()), default=sorted(df_final['Año'].unique()))
-        df_geo = df_final[df_final['Año'].isin(anios)]
-        
+        df_geo = df_filtrado
+
         pais_df = df_geo.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
         pais_df['Siniestralidad'] = (pais_df['Siniestros']/pais_df['Primas'])*100
         pais_df['Primas_M'] = pais_df['Primas']/1e6
@@ -363,13 +385,22 @@ elif df_final is not None:
             )
             st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Análisis Inteligente</div>{analisis_tabla}</div>""", unsafe_allow_html=True)
 
+        st.markdown("### Compañías (depende de filtros globales)")
+        comp_geo = df_geo.groupby('Compañía')[['Primas','Siniestros']].sum().reset_index()
+        comp_geo['Siniestralidad'] = (comp_geo['Siniestros']/comp_geo['Primas'])*100
+        comp_geo = comp_geo.sort_values('Primas', ascending=False)
+        st.dataframe(
+            comp_geo.style.format({'Primas':'${:,.0f}', 'Siniestros':'${:,.0f}', 'Siniestralidad':'{:.1f}%'}),
+            use_container_width=True, hide_index=True
+        )
+
     # ==========================================
     # TAB 2: PRODUCTOS (+ IA)
     # ==========================================
     with tab2:
-        ramo_df = df_final.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
+        ramo_df = df_filtrado.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
         ramo_df['Ratio'] = (ramo_df['Siniestros']/ramo_df['Primas'])*100
-        afi = df_final.groupby('AFILIADO')['Primas'].sum().reset_index()
+        afi = df_filtrado.groupby('AFILIADO')['Primas'].sum().reset_index()
         
         st.subheader("Rentabilidad por Producto")
         col_p1, col_p2 = st.columns(2)
@@ -426,7 +457,7 @@ elif df_final is not None:
                 with st.status("🛠️ Fabricando tu Plan...", expanded=True) as status:
                     # 1. Preparar datos
                     status.write("🔍 Extrayendo inteligencia de negocio...")
-                    pais_analisis = df_final.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
+                    pais_analisis = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
                     pais_analisis['Siniestralidad'] = (pais_analisis['Siniestros']/pais_analisis['Primas'])*100
                     top_paises = pais_analisis.sort_values('Primas', ascending=False).head(3)['País'].tolist()
                     
@@ -471,10 +502,8 @@ elif df_final is not None:
     with tab4:
         st.header("Análisis de Profundización Total")
         
-        filtro_af = st.radio("Filtrar por condición", ["Todos", "Afiliados", "No afiliados"], horizontal=True)
-        if filtro_af == "Afiliados": df_focus = df_final[df_final['AFILIADO'] == 'AFILIADO']
-        elif filtro_af == "No afiliados": df_focus = df_final[df_final['AFILIADO'] == 'NO AFILIADO']
-        else: df_focus = df_final
+        # filtro_af ya no se usa (se controla globalmente), así que trabajar directo con df_filtrado
+        df_focus = df_filtrado
 
         if df_focus.empty:
             st.warning("No hay datos para esta selección.")
