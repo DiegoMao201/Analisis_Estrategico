@@ -7,6 +7,9 @@ import os
 import datetime
 from openai import OpenAI
 
+# Ruta de datos por defecto en el repositorio
+DATA_REPO_PATH = os.path.join(os.path.dirname(__file__), "Plan de accion 2026.xlsx")
+
 # ==========================================
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILO VIP
 # ==========================================
@@ -202,23 +205,30 @@ def load_data_universal(file):
             df = pd.read_excel(file, engine='openpyxl', header=0, usecols="A:J")
             df.columns = [c.strip() for c in df.columns]
 
-        # Limpieza básica
+        # Normalización de campos clave
         df['Compañía'] = df['Compañía'].astype(str).str.strip()
         if 'Subramo' in df.columns:
             df['Subramo'] = df['Subramo'].fillna('General')
         if 'Ramo' in df.columns:
             df['Ramo'] = df['Ramo'].fillna('Otros')
+        if 'AFILIADO' in df.columns:
+            df['AFILIADO'] = (
+                df['AFILIADO']
+                .fillna('NO AFILIADO')
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .replace({'NO AFILIADOS':'NO AFILIADO', 'AFILIADOS':'AFILIADO'})
+            )
 
         # La columna USD ya está convertida - solo parseamos formato
         def parse_numero_latino(val):
             if pd.isna(val):
                 return 0.0
             texto = str(val).strip()
-            # Si es número directo (sin separadores), convertir
             try:
                 return float(texto)
             except:
-                # Si tiene separadores latinos . = miles, , = decimal
                 texto = texto.replace('.', '').replace(',', '.')
                 try:
                     return float(texto)
@@ -257,18 +267,17 @@ with st.sidebar:
     st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)
     st.header("Centro de Mando")
     st.info("📊 ALSUM Intelligence System")
-    
-    # Cargador de archivo Excel
-    uploaded_file = st.file_uploader("📂 Cargar base de datos", type=['xlsx', 'csv'], help="Sube el archivo Excel o CSV")
+    st.caption(f"Fuente de datos: {os.path.basename(DATA_REPO_PATH)} (repositorio)")
 
 # --- CARGA ---
-if uploaded_file is None:
-    st.warning("⚠️ Por favor, carga el archivo desde el panel lateral para continuar.")
+if not os.path.exists(DATA_REPO_PATH):
+    st.error(f"❌ No se encontró el archivo de datos en el repositorio: {DATA_REPO_PATH}")
     st.stop()
 
 try:
     with st.spinner('Inicializando protocolos de análisis...'):
-        df_final, error = load_data_universal(uploaded_file)
+        with open(DATA_REPO_PATH, "rb") as f:
+            df_final, error = load_data_universal(f)
 except Exception as e:
     st.error(f"❌ Error al cargar archivo: {e}")
     st.stop()
@@ -277,7 +286,7 @@ if error:
     st.error(f"❌ {error}")
     st.stop()
 elif df_final is not None:
-    
+    st.success("Datos cargados desde el repositorio")
     # --- KPIs ---
     escala = 1e9  # Miles de millones (Billions)
     primas_tot = df_final['Primas'].sum()
