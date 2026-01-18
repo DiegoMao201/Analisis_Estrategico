@@ -394,49 +394,21 @@ elif df_final is not None:
         comp_geo['Siniestralidad'] = (comp_geo['Siniestros']/comp_geo['Primas'])*100
         comp_geo['Resultado Técnico'] = comp_geo['Primas'] - comp_geo['Siniestros']
         comp_geo['Participación (%)'] = (comp_geo['Primas'] / df_geo['Primas'].sum()) * 100
-        comp_geo['Volumen'] = comp_geo['Primas'] # Columna duplicada para la barra
         comp_geo = comp_geo.sort_values('Primas', ascending=False)
         
         st.subheader("Panel de Control de Compañías")
         st.dataframe(
-            comp_geo,
-            use_container_width=True, hide_index=True,
-            column_order=[
-                "Compañía", "Volumen", "Primas", "Siniestros", 
-                "Siniestralidad", "Resultado Técnico", "Participación (%)"
-            ],
-            column_config={
-                "Compañía": st.column_config.TextColumn("Compañía", width="medium"),
-                "Volumen": st.column_config.BarChartColumn(
-                    "Volumen", 
-                    width="medium",
-                    help="Representación visual del volumen de primas.",
-                    y_min=0, 
-                    y_max=int(comp_geo['Primas'].max())
-                ),
-                "Primas": st.column_config.NumberColumn(
-                    "Primas", 
-                    format="$ {:,.0f}"
-                ),
-                "Siniestros": st.column_config.NumberColumn(
-                    "Siniestros", 
-                    format="$ {:,.0f}"
-                ),
-                "Resultado Técnico": st.column_config.NumberColumn(
-                    "Resultado Técnico", 
-                    help="Primas - Siniestros. Verde=Ganancia, Rojo=Pérdida",
-                    format="$ {:,.0f}"
-                ),
-                "Siniestralidad": st.column_config.NumberColumn(
-                    "Siniestralidad (%)", 
-                    help="Siniestros / Primas. Rojo es alto riesgo.",
-                    format="%.1f%%"
-                ),
-                "Participación (%)": st.column_config.NumberColumn(
-                    "Cuota de Mercado",
-                    format="%.2f%%"
-                )
-            }
+            comp_geo.style
+                .format({
+                    'Primas':'${:,.0f}', 
+                    'Siniestros':'${:,.0f}', 
+                    'Resultado Técnico':'${:,.0f}',
+                    'Siniestralidad':'{:.1f}%',
+                    'Participación (%)':'{:.2f}%'
+                })
+                .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r', vmin=0, vmax=100)
+                .bar(subset=['Resultado Técnico'], color=['#d65f5f', '#6acc64'], align='zero'),
+            use_container_width=True, hide_index=True
         )
         st.caption("Panel interactivo para identificar líderes de mercado (volumen), rentabilidad (resultado) y riesgo (siniestralidad).")
 
