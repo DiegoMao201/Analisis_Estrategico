@@ -304,15 +304,19 @@ elif df_final is not None:
     # --- FILTROS GLOBALES ---
     anios_disp = sorted(df_final['Año'].unique())
     ramos_disp = sorted(df_final['Ramo'].unique())
+    paises_disp = sorted(df_final['País'].unique())
 
     st.sidebar.markdown("### Filtros globales")
     filtro_anios = st.sidebar.multiselect("Año", anios_disp, default=anios_disp)
+    filtro_paises = st.sidebar.multiselect("País", paises_disp, default=paises_disp)
     filtro_afiliado = st.sidebar.radio("Afiliación", ["Todos", "Afiliados", "No afiliados"], horizontal=False)
     filtro_ramos = st.sidebar.multiselect("Ramo", ramos_disp, default=ramos_disp)
 
     df_filtrado = df_final.copy()
     if filtro_anios:
         df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+    if filtro_paises:
+        df_filtrado = df_filtrado[df_filtrado['País'].isin(filtro_paises)]
     if filtro_afiliado == "Afiliados":
         df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']
     elif filtro_afiliado == "No afiliados":
