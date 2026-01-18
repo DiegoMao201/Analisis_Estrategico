@@ -335,7 +335,7 @@ elif df_final is not None:
     ratio_global = (siniestros_tot / primas_tot) * 100 if primas_tot > 0 else 0
     res_tec = primas_tot - siniestros_tot
 
-    st.title(f"🚀 Plan Estratégico & Comercial {datetime.date.today().year}")
+    st.title(f"🚀 Analisis Comercial Lina Marcela Contreras {datetime.date.today().year}")
     
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Volumen Primas", f"${primas_tot/escala:,.2f}B")
@@ -393,10 +393,15 @@ elif df_final is not None:
         comp_geo = df_geo.groupby('Compañía')[['Primas','Siniestros']].sum().reset_index()
         comp_geo['Siniestralidad'] = (comp_geo['Siniestros']/comp_geo['Primas'])*100
         comp_geo = comp_geo.sort_values('Primas', ascending=False)
+        st.subheader("Compañías priorizadas")
         st.dataframe(
-            comp_geo.style.format({'Primas':'${:,.0f}', 'Siniestros':'${:,.0f}', 'Siniestralidad':'{:.1f}%'}),
+            comp_geo.style
+                .format({'Primas':'${:,.0f}', 'Siniestros':'${:,.0f}', 'Siniestralidad':'{:.1f}%'})
+                .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r')
+                .bar(subset=['Primas','Siniestros'], color='#004A8F', align='zero'),
             use_container_width=True, hide_index=True
         )
+        st.caption("Volumen (barras azules) y siniestralidad (color). Ordenadas por primas para focalizar la ejecución.")
 
     # ==========================================
     # TAB 2: PRODUCTOS (+ IA)
@@ -506,7 +511,6 @@ elif df_final is not None:
     with tab4:
         st.header("Análisis de Profundización Total")
         
-        # filtro_af ya no se usa (se controla globalmente), así que trabajar directo con df_filtrado
         df_focus = df_filtrado
 
         if df_focus.empty:
@@ -523,7 +527,6 @@ elif df_final is not None:
             fig_comp.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_comp, use_container_width=True)
             
-            # >>> IA ANALISIS RANKING <<<
             datos_comp = comp.sort_values('Primas', ascending=False).head(5).to_string()
             analisis_comp = generar_analisis_ia(
                 f"Top 5 Compañías:\n{datos_comp}\nBarras horizontales de Primas. Color=Siniestralidad.", 
@@ -531,44 +534,12 @@ elif df_final is not None:
             )
             st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Análisis Inteligente</div>{analisis_comp}</div>""", unsafe_allow_html=True)
 
-            c_deep1, c_deep2 = st.columns(2)
-            with c_deep1:
-                # --- 2. GRAFICO HEATMAP ---
-                st.subheader("Mapa de Calor (Riesgo)")
-                heat = df_focus.groupby(['Ramo','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
-                heat['Ratio'] = (heat['Siniestros']/heat['Primas'])*100
-                fig_heat = px.density_heatmap(heat, x='AFILIADO', y='Ramo', z='Ratio', color_continuous_scale='RdYlGn_r')
-                st.plotly_chart(fig_heat, use_container_width=True)
-                
-                # >>> IA ANALISIS HEATMAP <<<
-                datos_heat = heat.sort_values('Ratio', ascending=False).head(3).to_string()
-                analisis_heat = generar_analisis_ia(
-                    f"Puntos más calientes (Riesgo alto):\n{datos_heat}", 
-                    "Mapa de Calor de Riesgo"
-                )
-                st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Análisis Inteligente</div>{analisis_heat}</div>""", unsafe_allow_html=True)
-            
-            with c_deep2:
-                # --- 3. GRAFICO TREEMAP ---
-                st.subheader("Estructura de Cartera")
-                fig_tree = px.treemap(df_focus[df_focus['Primas']>0], path=[px.Constant("Global"), 'País', 'Ramo'], values='Primas')
-                st.plotly_chart(fig_tree, use_container_width=True)
-                
-                # >>> IA ANALISIS TREEMAP <<<
-                resumen_tree = df_focus.groupby('País')['Primas'].sum().sort_values(ascending=False).head(3).to_string()
-                analisis_tree = generar_analisis_ia(
-                    f"Estructura principal (Países dominantes):\n{resumen_tree}\nTreemap muestra tamaño relativo.", 
-                    "Treemap de Cartera"
-                )
-                st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Análisis Inteligente</div>{analisis_tree}</div>""", unsafe_allow_html=True)
-
-            # --- 4. GRAFICO TENDENCIA ---
+            # --- 2. GRAFICO TENDENCIA ---
             st.subheader("Evolución Histórica")
             trend = df_focus.groupby('Año')[['Primas','Siniestros']].sum().reset_index()
             fig_line = px.line(trend, x='Año', y=['Primas','Siniestros'], markers=True)
             st.plotly_chart(fig_line, use_container_width=True)
             
-            # >>> IA ANALISIS TENDENCIA <<<
             datos_trend = trend.to_string()
             analisis_trend = generar_analisis_ia(
                 f"Evolución anual Primas vs Siniestros:\n{datos_trend}", 
