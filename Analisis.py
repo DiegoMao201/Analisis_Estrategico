@@ -478,7 +478,25 @@ elif df_final is not None:
             return comp, heat, trend
         
         st.header("Análisis de Profundización Total")
-        comp, heat, trend = get_deep_analysis(df_final)
+
+        # Filtro de afiliación
+        filtro_af = st.radio(
+            "Filtrar por condición de afiliación",
+            ["Todos", "Afiliados", "No afiliados"],
+            horizontal=True
+        )
+        if filtro_af == "Afiliados":
+            df_focus = df_final[df_final['AFILIADO'] == 'AFILIADO']
+        elif filtro_af == "No afiliados":
+            df_focus = df_final[df_final['AFILIADO'] == 'NO AFILIADO']
+        else:
+            df_focus = df_final
+
+        if df_focus.empty:
+            st.warning("No hay datos para el filtro seleccionado.")
+            st.stop()
+
+        comp, heat, trend = get_deep_analysis(df_focus)
         
         st.subheader("Todas las Compañías Globales")
         fig_comp = px.bar(comp.sort_values('Primas', ascending=False), 
@@ -486,6 +504,7 @@ elif df_final is not None:
                          color='Ratio', color_continuous_scale='RdYlGn_r')
         fig_comp.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_comp, use_container_width=True)
+        st.markdown("- **Qué ves:** barras horizontales con el volumen de primas por compañía. El color indica la siniestralidad (%) — verde es menor siniestralidad, rojo es mayor.\n- **Para decidir rápido:** prioriza compañías con barras largas (más primas) y colores verdes/amarillos (mejor relación riesgo-retorno).")
         
         c_deep1, c_deep2 = st.columns(2)
         
@@ -494,29 +513,32 @@ elif df_final is not None:
             fig_heat = px.density_heatmap(heat, x='AFILIADO', y='Ramo', z='Ratio', 
                                          color_continuous_scale='RdYlGn_r')
             st.plotly_chart(fig_heat, use_container_width=True)
+            st.markdown("- **Qué ves:** calor por ramo y condición de afiliación. Colores rojos indican ramos con mayor siniestralidad.\n- **Para decidir rápido:** enfócate en ramos verdes/amarillos y mitiga o reprecifica los rojos.")
             
         with c_deep2:
             st.subheader("Estructura de Cartera (Completa)")
-            fig_tree = px.treemap(df_final[df_final['Primas']>0], 
+            fig_tree = px.treemap(df_focus[df_focus['Primas']>0], 
                                 path=[px.Constant("Global"), 'País', 'Ramo'], 
                                 values='Primas')
             st.plotly_chart(fig_tree, use_container_width=True)
+            st.markdown("- **Qué ves:** tamaño relativo de la cartera por país y ramo (áreas más grandes = mayor volumen de primas).\n- **Para decidir rápido:** identifica países/ramos dominantes y detecta huecos de penetración (áreas pequeñas) para crecer.")
             
         st.subheader("Evolución Histórica")
         fig_line = px.line(trend, x='Año', y=['Primas','Siniestros'], markers=True)
         st.plotly_chart(fig_line, use_container_width=True)
+        st.markdown("- **Qué ves:** tendencia anual de primas y siniestros.\n- **Para decidir rápido:** busca convergencia o cruces; si siniestros se acercan a primas, urge ajustar suscripción y precios.")
         
         st.markdown("---")
         st.subheader("🎯 Radar de Oportunidades")
         cf1, cf2, cf3 = st.columns(3)
         with cf1: 
-            p_radar = st.multiselect("País Objetivo", sorted(df_final['País'].unique()), key='rd_p')
+            p_radar = st.multiselect("País Objetivo", sorted(df_focus['País'].unique()), key='rd_p')
         with cf2: 
             r_radar = st.slider("Máximo Riesgo (%)", 0, 100, 60, key='rd_r')
         with cf3: 
             v_radar = st.number_input("Mínimo Primas USD", value=10000, step=10000, key='rd_v')
         
-        base_radar = df_final.groupby(['País','Compañía','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
+        base_radar = df_focus.groupby(['País','Compañía','AFILIADO'])[['Primas','Siniestros']].sum().reset_index()
         base_radar['Ratio'] = (base_radar['Siniestros']/base_radar['Primas'])*100
         
         mask = (base_radar['Primas']>=v_radar) & (base_radar['Ratio']<=r_radar)
@@ -527,3 +549,4 @@ elif df_final is not None:
         st.dataframe(final_radar.style.format({'Primas':'${:,.0f}','Siniestros':'${:,.0f}','Ratio':'{:.1f}%'})
                      .background_gradient(subset=['Ratio'], cmap='RdYlGn_r'), 
                      use_container_width=True)
+        st.markdown("- **Qué ves:** tabla filtrable de cuentas objetivo con buen volumen y siniestralidad bajo el umbral.\n- **Para decidir rápido:** ordena por primas y ejecuta sobre las primeras filas (mejor volumen con riesgo controlado).")
