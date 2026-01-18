@@ -413,19 +413,28 @@ elif df_final is not None:
         st.caption("Panel interactivo para identificar líderes de mercado (volumen), rentabilidad (resultado) y riesgo (siniestralidad).")
 
         # >>> IA ANÁLISIS DE COMPAÑÍAS <<<
+        # Preparar datos de países para la IA
+        pais_df['Resultado Técnico'] = pais_df['Primas'] - pais_df['Siniestros']
+        datos_paises_ia = pais_df.sort_values('Resultado Técnico', ascending=False).head(5).to_string(
+            formatters={'Primas':'${:,.0f}'.format, 'Siniestralidad':'{:.1f}%'.format, 'Resultado Técnico':'${:,.0f}'.format}
+        )
+
         datos_companias = comp_geo.head(5).to_string(
             columns=['Compañía', 'Primas', 'Siniestralidad', 'Resultado Técnico', 'Participación (%)'],
             formatters={'Primas':'${:,.0f}'.format, 'Siniestralidad':'{:.1f}%'.format, 'Resultado Técnico':'${:,.0f}'.format, 'Participación (%)':'{:.1f}%'.format}
         )
         
         prompt_companias = (
-            "Eres un Director de Estrategia Comercial. Analiza esta tabla de compañías de seguros. "
-            "Identifica la mejor oportunidad de negocio (puede ser un líder para fortalecer o un competidor para atacar). "
-            "Usa porcentajes y cifras para justificar tu elección. Sé directo y accionable."
+            "Eres un Director de Estrategia Comercial. Analiza estas dos tablas: un ranking de compañías y un ranking de países. "
+            "Tu análisis debe ser completo y accionable:\n"
+            "1. **Análisis de Compañías:** Identifica la mejor oportunidad de negocio (un líder para fortalecer o un competidor para atacar). Justifica con cifras en %.\n"
+            "2. **Análisis de Países:** Identifica los 3 países con la mejor oportunidad de crecimiento rentable. Justifica tu elección combinando su volumen de primas y su rentabilidad (baja siniestralidad o alto resultado técnico). Usa porcentajes.\n"
+            "Sé directo, numérico y estratégico."
         )
         
         analisis_companias = generar_analisis_ia(
-            f"Tabla de Compañías (Top 5 por Primas):\n{datos_companias}",
+            f"Tabla de Compañías (Top 5 por Primas):\n{datos_companias}\n\n"
+            f"Tabla de Países (Top 5 por Rentabilidad):\n{datos_paises_ia}",
             prompt_companias
         )
         st.markdown(f"""<div class="ai-box"><div class="ai-title">🧠 Decisión Estratégica</div>{analisis_companias}</div>""", unsafe_allow_html=True)
@@ -546,7 +555,7 @@ elif df_final is not None:
             comp = df_focus.groupby(['Compañía'])[['Primas','Siniestros']].sum().reset_index()
             comp['Ratio'] = (comp['Siniestros']/comp['Primas'])*100
             
-            # --- 1. GRAFICO COMPAÑIAS ---
+            # --- 1. GRAFICO COMPAÑÍAS ---
             st.subheader("Ranking de Compañías")
             fig_comp = px.bar(comp.sort_values('Primas', ascending=False).head(15), 
                            x='Primas', y='Compañía', orientation='h', 
