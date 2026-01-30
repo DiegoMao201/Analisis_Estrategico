@@ -3,36 +3,35 @@ import pandas as pd
 import os
 import datetime
 import re
+import gc
 from fpdf import FPDF
 from fuzzywuzzy import process, fuzz
 
 # ==========================================
-# 1. GESTIÓN DE RUTAS Y API
+# 1. GESTIÓN DE SISTEMA Y RUTAS
 # ==========================================
 def get_file_path(filename):
-    """Retorna la ruta absoluta de un archivo en la raíz del proyecto."""
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
-    # Si estamos dentro de la carpeta 'pages', subimos un nivel para buscar los excel
+    """Busca el archivo en la raíz o sube un nivel si está en pages."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     if base_dir.endswith("pages"):
         base_dir = os.path.dirname(base_dir)
     return os.path.join(base_dir, filename)
 
 def get_api_key():
-    """Recupera la API Key de st.secrets o variables de entorno."""
     try:
         return st.secrets["OPENAI_API_KEY"]
     except:
         return os.environ.get("OPENAI_API_KEY")
 
 # ==========================================
-# 2. CLASE PDF (UltimatePDF)
+# 2. MOTOR PDF
 # ==========================================
 class UltimatePDF(FPDF):
     def header(self):
         if self.page_no() > 1:
-            self.set_font('Helvetica', 'B', 9)
-            self.set_text_color(120, 120, 120)
-            self.cell(0, 10, 'MEMORANDO ESTRATÉGICO CONFIDENCIAL - PLAN 2026', 0, 0, 'L')
+            self.set_font('Arial', 'B', 9)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, 'ALSUM - ESTRATEGIA 2026', 0, 0, 'L')
             self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, 'R')
             self.set_draw_color(0, 74, 143)
             self.set_line_width(0.5)
@@ -41,202 +40,219 @@ class UltimatePDF(FPDF):
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
+        self.set_font('Arial', 'I', 8)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f'Autor: ALSUM Intelligence System | Página {self.page_no()}', 0, 0, 'C')
+        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
     def cover_page(self, title, subtitle):
         self.add_page()
         self.set_fill_color(0, 74, 143) 
         self.rect(0, 0, 210, 297, 'F') 
         self.set_text_color(255, 255, 255)
-        self.set_font('Helvetica', 'B', 45)
+        self.set_font('Arial', 'B', 40)
         self.ln(60)
         self.cell(0, 20, "ALSUM", 0, 1, 'C')
-        self.set_font('Helvetica', '', 14)
-        self.cell(0, 10, "INTELIGENCIA & ESTRATEGIA DE NEGOCIOS", 0, 1, 'C')
-        self.set_draw_color(255, 255, 255)
-        self.set_line_width(1)
-        self.line(50, 110, 160, 110)
+        self.set_font('Arial', '', 14)
+        self.cell(0, 10, "INTELIGENCIA DE NEGOCIOS", 0, 1, 'C')
         self.ln(40)
-        self.set_font('Helvetica', 'B', 32)
+        self.set_font('Arial', 'B', 28)
         self.multi_cell(0, 15, title, 0, 'C')
-        self.ln(5)
-        self.set_font('Helvetica', 'I', 18)
+        self.ln(10)
+        self.set_font('Arial', 'I', 16)
         self.multi_cell(0, 10, subtitle, 0, 'C')
 
-    def section_title(self, label):
-        self.set_font('Helvetica', 'B', 16)
-        self.set_text_color(0, 74, 143)
-        self.cell(0, 10, label.upper(), 0, 1, 'L')
-        self.ln(2)
-        self.set_draw_color(200, 200, 200)
-        self.line(10, self.get_y(), 200, self.get_y())
-        self.ln(8)
-
     def chapter_body(self, text):
-        self.set_font('Helvetica', '', 11)
+        self.set_font('Arial', '', 11)
         self.set_text_color(40, 40, 40)
         self.multi_cell(0, 6, text)
         self.ln()
 
-    def add_metric_box(self, label, value, x, y, bg_color=(245, 247, 250)):
-        self.set_xy(x, y)
-        self.set_fill_color(*bg_color)
-        self.rect(x, y, 45, 28, 'F')
-        self.set_draw_color(0, 74, 143)
-        self.line(x, y, x, y+28)
-        self.set_xy(x+2, y+6)
-        self.set_font('Helvetica', 'B', 8)
-        self.set_text_color(100, 100, 100)
-        self.cell(40, 5, label, 0, 2)
-        self.set_font('Helvetica', 'B', 11)
-        self.set_text_color(0, 0, 0)
-        self.cell(40, 8, value, 0, 0)
-
 # ==========================================
-# 3. LÓGICA DE DATOS
+# 3. CARGA DE DATOS (MÉTODO "SNIFFER" + LOW_MEMORY)
 # ==========================================
-
 def parse_numero_latino(val):
-    if pd.isna(val): return 0.0
+    if pd.isna(val) or val == '': return 0.0
     if isinstance(val, (int, float)): return float(val)
     texto = str(val).strip()
-    try: 
-        return float(texto)
+    texto = re.sub(r'[^\d.,-]', '', texto)
+    try: return float(texto)
     except:
-        texto_limpio = texto.replace('.', '').replace(',', '.')
-        try: 
-            return float(texto_limpio)
-        except: 
-            return 0.0
+        try: return float(texto.replace('.', '').replace(',', '.'))
+        except: return 0.0
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_plan_accion_procesado(filepath, sheet_name=None):
-    try:
-        if not os.path.exists(filepath):
-            return None, f"Archivo no encontrado en: {filepath}"
+    print(f"--- [UTILS] Iniciando carga de: {filepath}")
+    
+    if not os.path.exists(filepath):
+        return None, f"Archivo no encontrado: {filepath}"
 
-        df = pd.read_excel(filepath, engine='openpyxl', sheet_name=sheet_name)
+    try:
+        gc.collect() 
+        df = None
+
+        # --- ESTRATEGIA "SNIFFER" (OLFATEAR EL ARCHIVO) ---
+        if filepath.lower().endswith('.csv'):
+            print("--- [UTILS] Detectando formato CSV...")
+            # Leemos solo un pedacito (5KB) para detectar el separador
+            sep = ','
+            enc = 'utf-8'
+            
+            try:
+                with open(filepath, 'rb') as f:
+                    sample = f.read(10000) # Leemos más bytes para asegurar
+                
+                # Detectar Encoding
+                for e in ['utf-8', 'latin-1', 'cp1252']:
+                    try:
+                        text_sample = sample.decode(e)
+                        enc = e
+                        break
+                    except:
+                        continue
+                
+                # Detectar Separador (Contamos cuál aparece más)
+                if text_sample.count(';') > text_sample.count(','):
+                    sep = ';'
+                
+                print(f"--- [UTILS] Formato detectado: Separador='{sep}' | Encoding='{enc}'")
+                
+                # Carga ÚNICA y DEFINITIVA con low_memory=False para evitar warnings
+                df = pd.read_csv(filepath, sep=sep, encoding=enc, on_bad_lines='skip', low_memory=False)
+                
+            except Exception as e:
+                print(f"--- [ERROR DETECCIÓN] {e}. Intentando fallback...")
+                # Intento a fuerza bruta si falla el sniffer
+                df = pd.read_csv(filepath, sep=';', encoding='latin-1', on_bad_lines='skip', low_memory=False)
+
+        else:
+            print("--- [UTILS] Leyendo Excel...")
+            df = pd.read_excel(filepath, engine='openpyxl', sheet_name=sheet_name)
+
+        # --- LIMPIEZA RÁPIDA ---
         df.columns = [str(c).strip() for c in df.columns]
         
-        if 'Compañía' in df.columns: 
-            df['Compañía'] = df['Compañía'].astype(str).str.strip()
+        # Corrección Año
+        if 'Año' not in df.columns:
+            for col in df.columns:
+                if 'A' in col and 'o' in col and len(col) <= 5:
+                    df.rename(columns={col: 'Año'}, inplace=True)
+                    break
+
+        # Limpieza Textos
+        if 'Compañía' in df.columns: df['Compañía'] = df['Compañía'].astype(str).str.strip()
         
-        if 'Subramo' in df.columns: df['Subramo'] = df['Subramo'].fillna('General')
-        if 'Ramo' in df.columns: df['Ramo'] = df['Ramo'].fillna('Otros')
+        # Rellenos
+        defaults = {'Subramo': 'General', 'Ramo': 'Otros', 'País': 'Desconocido', 'AFILIADO': 'NO AFILIADO'}
+        df.fillna(defaults, inplace=True)
         
         if 'AFILIADO' in df.columns:
-            df['AFILIADO'] = df['AFILIADO'].fillna('NO AFILIADO').astype(str).str.strip().str.upper()
-            df['AFILIADO'] = df['AFILIADO'].replace({'NO AFILIADOS':'NO AFILIADO', 'AFILIADOS':'AFILIADO'})
+            df['AFILIADO'] = df['AFILIADO'].astype(str).str.upper()
+            mask_no = df['AFILIADO'].str.contains('NO')
+            df.loc[mask_no, 'AFILIADO'] = 'NO AFILIADO'
+            df.loc[~mask_no, 'AFILIADO'] = 'AFILIADO'
 
-        if 'USD' in df.columns:
-            df['USD'] = df['USD'].apply(parse_numero_latino)
+        if 'USD' in df.columns: df['USD'] = df['USD'].apply(parse_numero_latino)
 
-        cols_clave = ['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO']
-        
-        if all(col in df.columns for col in cols_clave) and 'Tipo' in df.columns and 'USD' in df.columns:
-            pivot_df = df.pivot_table(
-                index=cols_clave,
-                columns='Tipo',
-                values='USD',
-                aggfunc='sum',
-                fill_value=0
-            ).reset_index()
-            
-            pivot_df.columns.name = None
-            if 'Primas' not in pivot_df.columns: pivot_df['Primas'] = 0.0
-            if 'Siniestros' not in pivot_df.columns: pivot_df['Siniestros'] = 0.0
-            
-            pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
-            pivot_df['Siniestralidad'] = pivot_df.apply(
-                lambda x: (x['Siniestros'] / x['Primas'] * 100) if x['Primas'] > 0 else 0, axis=1
-            )
-            pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
-            return pivot_df, None
+        # --- PIVOTEO SI ES NECESARIO ---
+        if 'Primas' in df.columns and 'Siniestros' in df.columns:
+            pivot_df = df
         else:
-            return df, "No se pudo pivotar, pero se cargaron los datos crudos."
+            cols_req = ['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO']
+            if all(c in df.columns for c in cols_req) and 'Tipo' in df.columns and 'USD' in df.columns:
+                print("--- [UTILS] Pivotando...")
+                pivot_df = df.pivot_table(index=cols_req, columns='Tipo', values='USD', aggfunc='sum', fill_value=0).reset_index()
+                pivot_df.columns.name = None
+            else:
+                pivot_df = df 
+
+        # Métricas Finales
+        for m in ['Primas', 'Siniestros']:
+            if m not in pivot_df.columns: pivot_df[m] = 0.0
+        
+        pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
+        pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
+        
+        pivot_df['Siniestralidad'] = 0.0
+        mask_pos = pivot_df['Primas'] > 0
+        pivot_df.loc[mask_pos, 'Siniestralidad'] = (pivot_df.loc[mask_pos, 'Siniestros'] / pivot_df.loc[mask_pos, 'Primas']) * 100
+        
+        print(f"--- [UTILS] Carga completa. {len(pivot_df)} filas.")
+        return pivot_df, None
             
     except Exception as e:
-        return None, f"Error cargando archivo: {str(e)}"
+        print(f"--- [ERROR CRÍTICO] {e}")
+        return None, f"Error: {str(e)}"
 
 def load_excel_sheet(filepath, sheet_name=None):
     try:
-        if not os.path.exists(filepath):
-            return None
-        df = pd.read_excel(filepath, sheet_name=sheet_name, engine="openpyxl")
-        df.columns = [str(c).strip() for c in df.columns]
-        return df
-    except Exception as e:
-        print(f"Error cargando excel simple: {e}")
-        return None
+        if not os.path.exists(filepath): return None
+        if filepath.lower().endswith('.csv'):
+             try: return pd.read_csv(filepath, sep=';', encoding='latin-1')
+             except: return pd.read_csv(filepath, sep=',', encoding='utf-8')
+        return pd.read_excel(filepath, sheet_name=sheet_name, engine="openpyxl")
+    except: return None
 
 def crear_vista_pivot_anos(df_input, indice, valor='Primas'):
+    """Helper para crear vistas matriciales por Año."""
     try:
+        if 'Año' not in df_input.columns: return pd.DataFrame()
+        
         pivot = df_input.pivot_table(
-            index=indice, 
-            columns='Año', 
-            values=valor, 
-            aggfunc='sum', 
-            fill_value=0
+            index=indice, columns='Año', values=valor, aggfunc='sum', fill_value=0
         )
         pivot['TOTAL CONSOLIDADO'] = pivot.sum(axis=1)
         pivot = pivot.sort_values('TOTAL CONSOLIDADO', ascending=False)
+        # Convertir años a string para evitar problemas de formato
         pivot.columns = [str(c) for c in pivot.columns]
         return pivot.reset_index()
     except Exception:
         return pd.DataFrame()
 
 # ==========================================
-# 4. FUNCIONES DE TEXTO Y FUZZY MATCH
+# 4. CRUCE INTELIGENTE (OPTIMIZADO)
 # ==========================================
 def normalize_text(text):
-    """Limpia textos para mejorar el cruce: mayúsculas, sin espacios extra."""
     if pd.isna(text): return ""
-    text = str(text).upper().strip()
-    # Eliminar caracteres especiales básicos si es necesario
-    text = re.sub(r'[^\w\s]', '', text) 
-    return text
+    return re.sub(r'[^\w\s]', '', str(text).upper().strip())
 
-def fuzzy_merge(df_left, df_right, left_on, right_on, threshold=80, limit=1):
-    """
-    Realiza un cruce difuso entre dos DataFrames.
-    Crea columnas 'match_name' y 'match_score'.
-    """
-    # Crear copias para no afectar los originales
+@st.cache_data(show_spinner=False)
+def fuzzy_merge(df_left, df_right, left_on, right_on, threshold=85):
+    print("--- [UTILS] Cruzando bases...")
+    
+    # 1. Normalizar
     s_left = df_left.copy()
     s_right = df_right.copy()
-
-    # Normalizar llaves
     s_left['key_norm'] = s_left[left_on].apply(normalize_text)
     s_right['key_norm'] = s_right[right_on].apply(normalize_text)
     
-    # Obtener lista de opciones únicas del lado derecho para optimizar
+    # 2. Extraer Únicos (Velocidad x100)
+    unique_left = s_left['key_norm'].unique()
     choices = s_right['key_norm'].unique().tolist()
     
-    # Función interna para aplicar el match
-    def get_match(x):
-        # process.extractOne retorna (match, score)
-        match = process.extractOne(x, choices, scorer=fuzz.token_sort_ratio)
+    # 3. Calcular matches solo para únicos
+    match_dict = {}
+    for name in unique_left:
+        if not name: continue
+        match = process.extractOne(name, choices, scorer=fuzz.token_sort_ratio)
         if match and match[1] >= threshold:
-            return match[0], match[1]
-        return None, 0
-
-    # Aplicar match (esto puede tardar si son muchos datos)
-    matches = s_left['key_norm'].apply(get_match)
+            match_dict[name] = (match[0], match[1])
+        else:
+            match_dict[name] = (None, 0)
+            
+    # 4. Aplicar al dataframe completo
+    s_left['match_info'] = s_left['key_norm'].map(match_dict)
+    s_left['match_name'] = s_left['match_info'].apply(lambda x: x[0] if x else None)
+    s_left['match_score'] = s_left['match_info'].apply(lambda x: x[1] if x else 0)
     
-    # Desempaquetar resultados
-    s_left['match_name'] = [m[0] for m in matches]
-    s_left['match_score'] = [m[1] for m in matches]
+    # 5. Merge Final
+    # Limpiamos duplicados del lado derecho antes de pegar
+    right_clean = s_right.drop_duplicates(subset=['key_norm'])
     
-    # Hacer el merge real basado en el nombre matcheado
-    merged_df = pd.merge(
-        s_left, 
-        s_right, 
-        left_on='match_name', 
-        right_on='key_norm', 
-        how='left',
-        suffixes=('', '_right')
-    )
+    result = pd.merge(s_left, right_clean, left_on='match_name', right_on='key_norm', how='left', suffixes=('', '_right'))
     
-    return merged_df
+    cols_drop = ['key_norm', 'match_info', 'key_norm_right']
+    result.drop(columns=[c for c in cols_drop if c in result.columns], inplace=True)
+    
+    print("--- [UTILS] Cruce terminado.")
+    return result
