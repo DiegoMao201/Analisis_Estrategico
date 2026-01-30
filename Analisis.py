@@ -1,18 +1,16 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from fpdf import FPDF
-import tempfile
-import os
 import datetime
+import os
 from openai import OpenAI
+
+# Importar utilidades propias
+import utils
 
 # ==========================================
 # 0. CONFIGURACIÓN INICIAL
 # ==========================================
-# Ruta de datos por defecto
-DATA_REPO_PATH = os.path.join(os.path.dirname(__file__), "Plan de accion 2026.xlsx")
-
 st.set_page_config(
     page_title="ALSUM 2026 | Strategic Command", 
     layout="wide", 
@@ -25,16 +23,10 @@ st.set_page_config(
 # ==========================================
 st.markdown("""
 <style>
-    /* Tipografía y General */
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-    
     html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; }
     .main .block-container { padding-top: 1rem; padding-bottom: 3rem; }
-    
-    /* Encabezados */
     h1, h2, h3 { color: #004A8F; font-weight: 700; }
-    
-    /* Tarjetas de Métricas */
     div[data-testid="metric-container"] {
         background-color: #FFFFFF;
         border: 1px solid #E0E0E0;
@@ -45,29 +37,6 @@ st.markdown("""
         transition: transform 0.2s;
     }
     div[data-testid="metric-container"]:hover { transform: scale(1.02); }
-    
-    /* CAJA DE ANÁLISIS IA (CSS) */
-    .ai-box {
-        background-color: #f0f7ff;
-        border-left: 4px solid #004A8F;
-        padding: 15px;
-        border-radius: 5px;
-        margin-top: 10px;
-        margin-bottom: 25px;
-        font-size: 0.95rem;
-        color: #1e3a5f;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .ai-title {
-        font-weight: bold;
-        color: #004A8F;
-        margin-bottom: 5px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    
-    /* Botones */
     div.stButton > button {
         background: linear-gradient(135deg, #004A8F 0%, #002a52 100%);
         color: white; 
@@ -83,237 +52,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. MOTORES IA Y CLASE PDF
+# 2. CARGA DE DATOS (Usando Utils)
 # ==========================================
-
-def get_api_key():
-    """Recupera la API Key de st.secrets o variables de entorno"""
-    try:
-        return st.secrets["OPENAI_API_KEY"]
-    except:
-        try:
-            return os.environ["OPENAI_API_KEY"]
-        except:
-            return None
-
-def generar_analisis_ia(contexto_datos, tipo_grafico):
-    """
-    Motor de Análisis IA: Toma datos y devuelve insights estratégicos.
-    """
-    api_key = get_api_key()
-    
-    if not api_key:
-        return "⚠️ **IA Desactivada:** No se detectó la variable de entorno OPENAI_API_KEY."
-    
-    try:
-        client = OpenAI(api_key=api_key)
-        prompt_system = (
-            "Eres un Consultor Estratégico Senior de Seguros (ALSUM). "
-            "Analizas datos para la Junta Directiva. Sé breve, directo y perspicaz."
-        )
-        prompt_user = (
-            f"Analiza estos datos de un {tipo_grafico}:\n"
-            f"{contexto_datos}\n\n"
-            "Responde con este formato Markdown exacto:\n"
-            "**🔍 Qué muestra:** (1 frase describiendo la visualización)\n"
-            "**📊 Interpretación:** (Cómo leer los datos, qué destaca)\n"
-            "**🚀 Acción:** (1 recomendación de negocio imperativa)"
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": prompt_system},
-                {"role": "user", "content": prompt_user}
-            ],
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"❌ Error de conexión IA: {str(e)}"
-
-class UltimatePDF(FPDF):
-    def header(self):
-        if self.page_no() > 1:
-            self.set_font('Arial', 'B', 9)
-            self.set_text_color(120, 120, 120)
-            self.cell(0, 10, 'MEMORANDO ESTRATÉGICO CONFIDENCIAL - PLAN 2026', 0, 0, 'L')
-            self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, 'R')
-            self.set_draw_color(0, 74, 143)
-            self.set_line_width(0.5)
-            self.line(10, 20, 200, 20)
-            self.ln(15)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f'Autor: ALSUM Intelligence System | Página {self.page_no()}', 0, 0, 'C')
-
-    def cover_page(self, title, subtitle):
-        self.add_page()
-        self.set_fill_color(0, 74, 143) 
-        self.rect(0, 0, 210, 297, 'F') 
-        self.set_text_color(255, 255, 255)
-        self.set_font('Arial', 'B', 45)
-        self.ln(60)
-        self.cell(0, 20, "ALSUM", 0, 1, 'C')
-        self.set_font('Arial', '', 14)
-        self.cell(0, 10, "INTELIGENCIA & ESTRATEGIA DE NEGOCIOS", 0, 1, 'C')
-        self.set_draw_color(255, 255, 255)
-        self.set_line_width(1)
-        self.line(50, 110, 160, 110)
-        self.ln(40)
-        self.set_font('Arial', 'B', 32)
-        self.multi_cell(0, 15, title, 0, 'C')
-        self.ln(5)
-        self.set_font('Arial', 'I', 18)
-        self.multi_cell(0, 10, subtitle, 0, 'C')
-
-    def section_title(self, label):
-        self.set_font('Arial', 'B', 16)
-        self.set_text_color(0, 74, 143)
-        self.cell(0, 10, label.upper(), 0, 1, 'L')
-        self.ln(2)
-        self.set_draw_color(200, 200, 200)
-        self.line(10, self.get_y(), 200, self.get_y())
-        self.ln(8)
-
-    def chapter_body(self, text):
-        self.set_font('Arial', '', 11)
-        self.set_text_color(40, 40, 40)
-        self.multi_cell(0, 6, text)
-        self.ln()
-
-    def add_metric_box(self, label, value, x, y, bg_color=(245, 247, 250)):
-        self.set_xy(x, y)
-        self.set_fill_color(*bg_color)
-        self.rect(x, y, 45, 28, 'F')
-        self.set_draw_color(0, 74, 143)
-        self.line(x, y, x, y+28)
-        self.set_xy(x+2, y+6)
-        self.set_font('Arial', 'B', 8)
-        self.set_text_color(100, 100, 100)
-        self.cell(40, 5, label, 0, 2)
-        self.set_font('Arial', 'B', 11)
-        self.set_text_color(0, 0, 0)
-        self.cell(40, 8, value, 0, 0)
-
-    def create_table(self, df):
-        self.set_font('Arial', 'B', 9)
-        self.set_fill_color(0, 74, 143)
-        self.set_text_color(255, 255, 255)
-        col_width = 190 / len(df.columns)
-        for col in df.columns:
-            self.cell(col_width, 8, str(col), 1, 0, 'C', 1)
-        self.ln()
-        self.set_font('Arial', '', 8)
-        self.set_text_color(0, 0, 0)
-        fill = False
-        for i, row in df.iterrows():
-            self.set_fill_color(240, 245, 255) if fill else self.set_fill_color(255, 255, 255)
-            for item in row:
-                txt = str(item)[:28]
-                self.cell(col_width, 7, txt, 1, 0, 'C', fill)
-            self.ln()
-            fill = not fill
-
-# ==========================================
-# 3. CARGA DE DATOS ROBUSTA
-# ==========================================
-@st.cache_data(show_spinner=False)
-def load_data_universal(file):
-    try:
-        if file.name.endswith('.csv'):
-            file.seek(0)
-            df = pd.read_csv(file, sep=';', engine='python', usecols=range(10), on_bad_lines='skip', encoding='utf-8', header=0)
-            df.columns = [c.strip() for c in df.columns]
-        else:
-            df = pd.read_excel(file, engine='openpyxl', header=0, usecols="A:J")
-            df.columns = [c.strip() for c in df.columns]
-
-        # Limpieza
-        df['Compañía'] = df['Compañía'].astype(str).str.strip()
-        if 'Subramo' in df.columns: df['Subramo'] = df['Subramo'].fillna('General')
-        if 'Ramo' in df.columns: df['Ramo'] = df['Ramo'].fillna('Otros')
-        if 'AFILIADO' in df.columns:
-            df['AFILIADO'] = df['AFILIADO'].fillna('NO AFILIADO').astype(str).str.strip().str.upper().replace({'NO AFILIADOS':'NO AFILIADO', 'AFILIADOS':'AFILIADO'})
-
-        # Conversión Numérica (USD ya viene en dólares; no usamos tasa de cambio)
-        def parse_numero_latino(val):
-            if pd.isna(val): return 0.0
-            texto = str(val).strip()
-            try: return float(texto)
-            except:
-                texto = texto.replace('.', '').replace(',', '.')
-                try: return float(texto)
-                except: return 0.0
-
-        df['USD'] = df['USD'].apply(parse_numero_latino)
-
-        # Excluir ramos no deseados
-        df = df[~df['Ramo'].str.upper().isin(['RIESGOS PORTUARIOS', 'RIESGOS PETROLEROS'])]
-
-        # Pivoteo
-        pivot_df = df.pivot_table(
-            index=['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO'],
-            columns='Tipo', values='USD', aggfunc='sum', fill_value=0
-        ).reset_index()
-
-        pivot_df.columns.name = None
-        if 'Primas' not in pivot_df.columns: pivot_df['Primas'] = 0.0
-        if 'Siniestros' not in pivot_df.columns: pivot_df['Siniestros'] = 0.0
-
-        pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
-        pivot_df['Siniestralidad'] = (pivot_df['Siniestros'] / pivot_df['Primas']).replace([float('inf'), -float('inf')], 0) * 100
-        pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
-
-        return pivot_df, None
-    except Exception as e:
-        return None, f"Error: {e}"
-
-# ==========================================
-# 4. INTERFAZ Y LÓGICA PRINCIPAL
-# ==========================================
-
-# --- FUNCION AUXILIAR PARA PIVOT DE AÑOS ---
-def crear_vista_pivot_anos(df_input, indice, valor='Primas'):
-    """
-    Crea una tabla con los años como columnas y una columna final de Total.
-    """
-    try:
-        pivot = df_input.pivot_table(
-            index=indice, 
-            columns='Año', 
-            values=valor, 
-            aggfunc='sum', 
-            fill_value=0
-        )
-        pivot['TOTAL CONSOLIDADO'] = pivot.sum(axis=1)
-        pivot = pivot.sort_values('TOTAL CONSOLIDADO', ascending=False)
-        pivot.columns = [str(c) for c in pivot.columns]
-        return pivot.reset_index()
-    except Exception as e:
-        return pd.DataFrame()
+DATA_FILE = "Plan de accion 2026.xlsx"
+FULL_PATH = utils.get_file_path(DATA_FILE)
 
 with st.sidebar:
     st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)
     st.header("Centro de Mando")
     st.info("📊 ALSUM Intelligence System")
-    st.caption(f"Archivo base: {os.path.basename(DATA_REPO_PATH)}")
+    st.caption(f"Archivo base: {DATA_FILE}")
 
-# --- CARGA INICIAL ---
-if not os.path.exists(DATA_REPO_PATH):
-    st.error(f"❌ No se encontró el archivo de datos: {DATA_REPO_PATH}")
+# Validación de existencia
+if not os.path.exists(FULL_PATH):
+    st.error(f"❌ No se encontró el archivo de datos: {FULL_PATH}")
     st.stop()
 
-try:
-    with st.spinner('Inicializando protocolos de análisis...'):
-        with open(DATA_REPO_PATH, "rb") as f:
-            df_final, error = load_data_universal(f)
-except Exception as e:
-    st.error(f"❌ Error crítico al cargar archivo: {e}")
-    st.stop()
+# Carga de datos
+with st.spinner('Inicializando protocolos de análisis...'):
+    df_final, error = utils.load_plan_accion_procesado(FULL_PATH)
 
 if error:
     st.error(f"❌ {error}")
@@ -363,7 +120,7 @@ elif df_final is not None:
         st.stop()
 
     # ---------------------------------------------------------
-    # 3. KPIs GLOBALES (Afectados por Sidebar + Expander)
+    # 3. KPIs GLOBALES
     # ---------------------------------------------------------
     escala = 1e9
     primas_tot = df_filtrado['Primas'].sum()
@@ -388,7 +145,7 @@ elif df_final is not None:
         st.subheader("Análisis de Territorio")
         if ver_desglose_anos and len(filtro_anios) > 1:
             st.markdown("##### 📅 Vista Desglosada por Años (Consolidado al final)")
-            df_pivot_pais = crear_vista_pivot_anos(df_filtrado, 'País', metrica_view)
+            df_pivot_pais = utils.crear_vista_pivot_anos(df_filtrado, 'País', metrica_view)
             format_dict = {col: '${:,.0f}' for col in df_pivot_pais.columns if col not in ['País']}
             st.dataframe(
                 df_pivot_pais.style.format(format_dict).background_gradient(cmap="Blues", subset=['TOTAL CONSOLIDADO']),
@@ -415,7 +172,7 @@ elif df_final is not None:
         st.markdown("### Ranking de Compañías")
         if ver_desglose_anos and len(filtro_anios) > 1:
             st.info(f"Mostrando desglose anual de **{metrica_view}** por Compañía")
-            df_pivot_comp = crear_vista_pivot_anos(df_filtrado, 'Compañía', metrica_view)
+            df_pivot_comp = utils.crear_vista_pivot_anos(df_filtrado, 'Compañía', metrica_view)
             st.dataframe(
                 df_pivot_comp.head(50).style
                 .format({col: '${:,.0f}' for col in df_pivot_comp.columns if col != 'Compañía'})
@@ -438,7 +195,7 @@ elif df_final is not None:
         st.subheader("Análisis por Ramo")
         if ver_desglose_anos and len(filtro_anios) > 1:
             st.markdown("##### Evolución Anual por Producto")
-            df_pivot_ramo = crear_vista_pivot_anos(df_filtrado, 'Ramo', metrica_view)
+            df_pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', metrica_view)
             st.dataframe(
                 df_pivot_ramo.style.format({col: '${:,.0f}' for col in df_pivot_ramo.columns if col != 'Ramo'})
                 .background_gradient(subset=['TOTAL CONSOLIDADO'], cmap='Greens'),
@@ -453,7 +210,7 @@ elif df_final is not None:
                            title="Ramos: Volumen y Siniestralidad")
             st.plotly_chart(fig_bar, use_container_width=True)
 
-    # === TAB 3: PDF (Igual que antes) ===
+    # === TAB 3: PDF (Usando Utils) ===
     with tab3:
         st.header("🧠 Generador de Informe de Conquista 2026")
         st.markdown("Este módulo utiliza **GPT-4** (configurado en el entorno) para redactar el plan estratégico.")
@@ -464,8 +221,9 @@ elif df_final is not None:
             st.write("")
             st.write("")
             btn_gen = st.button("🔥 GENERAR INFORME PDF", type="primary")
+        
         if btn_gen:
-            api_key = get_api_key()
+            api_key = utils.get_api_key()
             if not api_key:
                 st.error("⚠️ Error: No se encontró la API KEY en las variables de entorno.")
             else:
@@ -473,11 +231,13 @@ elif df_final is not None:
                     pais_analisis = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
                     pais_analisis['Siniestralidad'] = (pais_analisis['Siniestros']/pais_analisis['Primas'])*100
                     top_paises = pais_analisis.sort_values('Primas', ascending=False).head(3)['País'].tolist()
+                    
                     prompt_user = (
                         f"Datos Clave: Primas ${primas_tot/1e9:.2f}B USD. Siniestralidad {ratio_global:.1f}%. "
                         f"Top Mercados: {', '.join(top_paises)}. Instrucción Usuario: {foco}. "
                         "Escribe un diagnóstico ejecutivo y 3 estrategias puntuales para crecer en 2026."
                     )
+                    
                     status.write("🧠 Redactando estrategia con IA...")
                     try:
                         client = OpenAI(api_key=api_key)
@@ -486,8 +246,9 @@ elif df_final is not None:
                             messages=[{"role": "user", "content": prompt_user}]
                         )
                         texto_estrategia = resp.choices[0].message.content
+                        
                         status.write("📄 Ensamblando PDF profesional...")
-                        pdf = UltimatePDF()
+                        pdf = utils.UltimatePDF()
                         pdf.cover_page("PLAN DE DOMINACIÓN 2026", "ESTRATEGIA PARA LA EXPANSIÓN")
                         pdf.add_page()
                         pdf.section_title("1. TABLERO DE CONTROL (KPIs)")
@@ -497,6 +258,7 @@ elif df_final is not None:
                         pdf.section_title("2. ESTRATEGIA GENERADA POR IA")
                         pdf.chapter_body(texto_estrategia)
                         pdf_bytes = bytes(pdf.output(dest='S'))
+                        
                         status.update(label="✅ Informe listo.", state="complete", expanded=False)
                         st.download_button("📥 DESCARGAR PDF", pdf_bytes, "Plan_2026.pdf", "application/pdf", type="primary")
                     except Exception as e:
