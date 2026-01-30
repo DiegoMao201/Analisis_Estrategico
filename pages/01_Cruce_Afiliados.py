@@ -15,7 +15,7 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(ROOT_DIR, ".."))  # Sube a la raíz del repo
 
 # Define las rutas relativas a los archivos en la raíz
-PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de acción 2026.xlsx")
+PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de accion 2026.xlsx")
 NUEVOS_AFILIADOS_PATH = os.path.join(ROOT_DIR, "nuevos_afiliados.xlsx")
 DIRECTORIO_PATH = os.path.join(ROOT_DIR, "Directorio_Afiliados_2025.xlsx")
 
