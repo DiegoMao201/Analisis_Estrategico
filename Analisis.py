@@ -5,7 +5,7 @@ import datetime
 import os
 from openai import OpenAI
 
-# Importar utilidades propias
+# Importar utilidades propias (asegúrate de que utils.py esté en la misma carpeta)
 import utils
 
 # ==========================================
@@ -57,21 +57,20 @@ st.markdown("""
 DATA_FILE = "plan_2026.xlsx"
 FULL_PATH = utils.get_file_path(DATA_FILE)
 
-PLAN_ACCION_PATH = utils.get_file_path("plan_2026.xlsx")
-
 with st.sidebar:
     st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)
     st.header("Centro de Mando")
     st.info("📊 ALSUM Intelligence System")
     st.caption(f"Archivo base: {DATA_FILE}")
 
-# Validación de existencia
+# Validación de existencia del archivo
 if not os.path.exists(FULL_PATH):
     st.error(f"❌ No se encontró el archivo de datos: {FULL_PATH}")
+    st.warning("Por favor, asegúrate de que 'plan_2026.xlsx' esté en la carpeta del proyecto.")
     st.stop()
 
-# Carga de datos
-with st.spinner('Inicializando protocolos de análisis...'):
+# Carga de datos (Esto usa caché en utils, por lo que es rápido tras la primera carga)
+with st.spinner('Inicializando protocolos de análisis... (Cargando datos)'):
     df_final, error = utils.load_plan_accion_procesado(FULL_PATH)
 
 if error:
@@ -83,8 +82,8 @@ elif df_final is not None:
     # 1. FILTROS GLOBALES (SIDEBAR - MACRO)
     # ---------------------------------------------------------
     anios_disp = sorted(df_final['Año'].unique())
-    ramos_disp = sorted(df_final['Ramo'].unique())
     paises_disp = sorted(df_final['País'].unique())
+    ramos_disp = sorted(df_final['Ramo'].unique())
 
     st.sidebar.markdown("### 🌍 Filtros Macro")
     filtro_anios = st.sidebar.multiselect("Año", anios_disp, default=anios_disp)
@@ -94,11 +93,17 @@ elif df_final is not None:
 
     # Aplicar Filtros Sidebar
     df_filtrado = df_final.copy()
-    if filtro_anios: df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
-    if filtro_paises: df_filtrado = df_filtrado[df_filtrado['País'].isin(filtro_paises)]
-    if filtro_afiliado == "Afiliados": df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']
-    elif filtro_afiliado == "No afiliados": df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']
-    if filtro_ramos: df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
+    
+    if filtro_anios: 
+        df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+    if filtro_paises: 
+        df_filtrado = df_filtrado[df_filtrado['País'].isin(filtro_paises)]
+    if filtro_afiliado == "Afiliados": 
+        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']
+    elif filtro_afiliado == "No afiliados": 
+        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']
+    if filtro_ramos: 
+        df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
 
     # ---------------------------------------------------------
     # 2. AREA PRINCIPAL Y FILTROS AVANZADOS (EXPANDER)
@@ -114,26 +119,29 @@ elif df_final is not None:
             metrica_view = st.radio("👁️ Métrica Principal:", ["Primas", "Siniestros"], horizontal=True)
         with c_filt3:
             ver_desglose_anos = st.toggle("📅 Desglosar Años en Columnas", value=True)
+        
         if filtro_empresas:
             df_filtrado = df_filtrado[df_filtrado['Compañía'].isin(filtro_empresas)]
 
     if df_filtrado.empty:
-        st.error("❌ No hay datos para los filtros seleccionados.")
+        st.warning("⚠️ No hay datos para los filtros seleccionados. Intenta ampliar la búsqueda.")
         st.stop()
 
     # ---------------------------------------------------------
     # 3. KPIs GLOBALES
     # ---------------------------------------------------------
-    escala = 1e9
+    escala = 1e9 # Billones
     primas_tot = df_filtrado['Primas'].sum()
     siniestros_tot = df_filtrado['Siniestros'].sum()
+    
+    # Cálculo seguro de ratio global
     ratio_global = (siniestros_tot / primas_tot) * 100 if primas_tot > 0 else 0
     res_tec = primas_tot - siniestros_tot
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Volumen Primas", f"${primas_tot/escala:,.2f}B")
-    k2.metric("Siniestros Totales", f"${siniestros_tot/escala:,.2f}B")
-    k3.metric("Siniestralidad", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta")
+    k1.metric("Volumen Primas (USD)", f"${primas_tot/escala:,.2f}B")
+    k2.metric("Siniestros Totales (USD)", f"${siniestros_tot/escala:,.2f}B")
+    k3.metric("Siniestralidad Global", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta (65%)")
     k4.metric("Resultado Técnico", f"${res_tec/escala:,.2f}B")
     st.markdown("---")
 
@@ -145,46 +153,57 @@ elif df_final is not None:
     # === TAB 1: GEOGRÁFICO ===
     with tab1:
         st.subheader("Análisis de Territorio")
+        
         if ver_desglose_anos and len(filtro_anios) > 1:
-            st.markdown("##### 📅 Vista Desglosada por Años (Consolidado al final)")
+            st.markdown(f"##### 📅 Vista Desglosada por Años ({metrica_view})")
             df_pivot_pais = utils.crear_vista_pivot_anos(df_filtrado, 'País', metrica_view)
-            format_dict = {col: '${:,.0f}' for col in df_pivot_pais.columns if col not in ['País']}
+            
+            # Formateo dinámico de columnas
+            cols_numericas = [c for c in df_pivot_pais.columns if c != 'País']
+            format_dict = {col: '${:,.0f}' for col in cols_numericas}
+            
             st.dataframe(
                 df_pivot_pais.style.format(format_dict).background_gradient(cmap="Blues", subset=['TOTAL CONSOLIDADO']),
                 use_container_width=True, hide_index=True
             )
-            pais_df_chart = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
-            pais_df_chart['Siniestralidad'] = (pais_df_chart['Siniestros']/pais_df_chart['Primas'])*100
-        else:
-            pais_df_chart = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
-            pais_df_chart['Siniestralidad'] = (pais_df_chart['Siniestros']/pais_df_chart['Primas'])*100
-            pais_df_chart['Primas_M'] = pais_df_chart['Primas']/1e6
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                fig_map = px.scatter(pais_df_chart, x='Primas', y='Siniestralidad', 
+        
+        # Gráfica siempre visible debajo
+        pais_df_chart = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
+        pais_df_chart['Siniestralidad'] = pais_df_chart.apply(
+            lambda x: (x['Siniestros']/x['Primas']*100) if x['Primas'] > 0 else 0, axis=1
+        )
+        
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig_map = px.scatter(pais_df_chart, x='Primas', y='Siniestralidad', 
                                    size='Primas', color='País',
+                                   hover_name='País',
                                    title="Matriz de Desempeño (Riesgo vs Volumen)")
-                fig_map.add_hline(y=65, line_dash="dash", line_color="red")
-                st.plotly_chart(fig_map, use_container_width=True)
-            with c2:
-                st.dataframe(pais_df_chart[['País', 'Primas', 'Siniestralidad']].sort_values('Primas', ascending=False)
-                             .style.format({'Primas':'${:,.0f}', 'Siniestralidad':'{:.1f}%'}), 
-                             hide_index=True, use_container_width=True)
+            fig_map.add_hline(y=65, line_dash="dash", line_color="red", annotation_text="Límite Rentabilidad")
+            st.plotly_chart(fig_map, use_container_width=True)
+        with c2:
+            st.markdown("**Top Países por Volumen**")
+            st.dataframe(pais_df_chart[['País', 'Primas', 'Siniestralidad']].sort_values('Primas', ascending=False)
+                         .style.format({'Primas':'${:,.0f}', 'Siniestralidad':'{:.1f}%'}), 
+                         hide_index=True, use_container_width=True)
 
         st.markdown("### Ranking de Compañías")
         if ver_desglose_anos and len(filtro_anios) > 1:
             st.info(f"Mostrando desglose anual de **{metrica_view}** por Compañía")
             df_pivot_comp = utils.crear_vista_pivot_anos(df_filtrado, 'Compañía', metrica_view)
+            
+            cols_vals = [c for c in df_pivot_comp.columns if c != 'Compañía']
             st.dataframe(
                 df_pivot_comp.head(50).style
-                .format({col: '${:,.0f}' for col in df_pivot_comp.columns if col != 'Compañía'})
+                .format({col: '${:,.0f}' for col in cols_vals})
                 .bar(subset=['TOTAL CONSOLIDADO'], color='#004A8F'),
                 use_container_width=True, hide_index=True
             )
         else:
             comp_geo = df_filtrado.groupby('Compañía')[['Primas','Siniestros']].sum().reset_index()
-            comp_geo['Siniestralidad'] = (comp_geo['Siniestros']/comp_geo['Primas'])*100
+            comp_geo['Siniestralidad'] = comp_geo.apply(lambda x: (x['Siniestros']/x['Primas']*100) if x['Primas']>0 else 0, axis=1)
             comp_geo['Resultado Técnico'] = comp_geo['Primas'] - comp_geo['Siniestros']
+            
             st.dataframe(
                 comp_geo.sort_values('Primas', ascending=False).head(50).style
                     .format({'Primas':'${:,.0f}', 'Siniestros':'${:,.0f}', 'Resultado Técnico':'${:,.0f}', 'Siniestralidad':'{:.1f}%'})
@@ -198,14 +217,16 @@ elif df_final is not None:
         if ver_desglose_anos and len(filtro_anios) > 1:
             st.markdown("##### Evolución Anual por Producto")
             df_pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', metrica_view)
+            cols_vals = [c for c in df_pivot_ramo.columns if c != 'Ramo']
             st.dataframe(
-                df_pivot_ramo.style.format({col: '${:,.0f}' for col in df_pivot_ramo.columns if col != 'Ramo'})
+                df_pivot_ramo.style.format({col: '${:,.0f}' for col in cols_vals})
                 .background_gradient(subset=['TOTAL CONSOLIDADO'], cmap='Greens'),
                 use_container_width=True, hide_index=True
             )
         else:
             ramo_df = df_filtrado.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
-            ramo_df['Ratio'] = (ramo_df['Siniestros']/ramo_df['Primas'])*100
+            ramo_df['Ratio'] = ramo_df.apply(lambda x: (x['Siniestros']/x['Primas']*100) if x['Primas']>0 else 0, axis=1)
+            
             fig_bar = px.bar(ramo_df.sort_values('Primas', ascending=False), 
                            x='Ramo', y='Primas', color='Ratio',
                            color_continuous_scale='RdYlGn_r', 
@@ -215,10 +236,11 @@ elif df_final is not None:
     # === TAB 3: PDF (Usando Utils) ===
     with tab3:
         st.header("🧠 Generador de Informe de Conquista 2026")
-        st.markdown("Este módulo utiliza **GPT-4** (configurado en el entorno) para redactar el plan estratégico.")
+        st.markdown("Este módulo utiliza **GPT-4** para redactar el plan estratégico basado en los datos filtrados.")
+        
         c_ai1, c_ai2 = st.columns([2, 1])
         with c_ai1:
-            foco = st.text_area("🎯 Instrucción Especial (Opcional)", placeholder="Ej: Enfocarme en México y reducir siniestralidad...")
+            foco = st.text_area("🎯 Instrucción Especial (Opcional)", placeholder="Ej: Enfocarme en el crecimiento en México y reducir siniestralidad en Autos...")
         with c_ai2:
             st.write("")
             st.write("")
@@ -230,14 +252,17 @@ elif df_final is not None:
                 st.error("⚠️ Error: No se encontró la API KEY en las variables de entorno.")
             else:
                 with st.status("🛠️ Fabricando tu Plan...", expanded=True) as status:
+                    # Preparar datos para el prompt
                     pais_analisis = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
-                    pais_analisis['Siniestralidad'] = (pais_analisis['Siniestros']/pais_analisis['Primas'])*100
                     top_paises = pais_analisis.sort_values('Primas', ascending=False).head(3)['País'].tolist()
                     
                     prompt_user = (
-                        f"Datos Clave: Primas ${primas_tot/1e9:.2f}B USD. Siniestralidad {ratio_global:.1f}%. "
-                        f"Top Mercados: {', '.join(top_paises)}. Instrucción Usuario: {foco}. "
-                        "Escribe un diagnóstico ejecutivo y 3 estrategias puntuales para crecer en 2026."
+                        f"Actúa como consultor estratégico senior. Datos Clave del Dashboard actual: "
+                        f"Primas Totales ${primas_tot/1e9:.2f}B USD. Siniestralidad Global {ratio_global:.1f}%. "
+                        f"Top Mercados actuales: {', '.join(top_paises)}. "
+                        f"Instrucción Adicional del Usuario: {foco}. "
+                        "Escribe un diagnóstico ejecutivo de 3 párrafos y 3 estrategias puntuales (bullet points) para el plan 2026. "
+                        "Sé directo y profesional."
                     )
                     
                     status.write("🧠 Redactando estrategia con IA...")
@@ -254,15 +279,22 @@ elif df_final is not None:
                         pdf.cover_page("PLAN DE DOMINACIÓN 2026", "ESTRATEGIA PARA LA EXPANSIÓN")
                         pdf.add_page()
                         pdf.section_title("1. TABLERO DE CONTROL (KPIs)")
-                        pdf.add_metric_box("PRIMAS (B)", f"${primas_tot/1e9:.2f}", 15, pdf.get_y()+5)
-                        pdf.add_metric_box("SINIESTRALIDAD", f"{ratio_global:.1f}%", 115, pdf.get_y()+5)
+                        
+                        # Cajas de métricas en el PDF
+                        current_y = pdf.get_y()
+                        pdf.add_metric_box("PRIMAS (USD)", f"${primas_tot/1e9:.2f}B", 15, current_y + 5)
+                        pdf.add_metric_box("SINIESTRALIDAD", f"{ratio_global:.1f}%", 70, current_y + 5)
+                        pdf.add_metric_box("RESULTADO TÉC.", f"${res_tec/1e9:.2f}B", 125, current_y + 5)
+                        
                         pdf.ln(40)
                         pdf.section_title("2. ESTRATEGIA GENERADA POR IA")
                         pdf.chapter_body(texto_estrategia)
+                        
                         pdf_bytes = bytes(pdf.output(dest='S'))
                         
                         status.update(label="✅ Informe listo.", state="complete", expanded=False)
                         st.download_button("📥 DESCARGAR PDF", pdf_bytes, "Plan_2026.pdf", "application/pdf", type="primary")
+                    
                     except Exception as e:
                         st.error(f"Error en generación: {e}")
 
@@ -270,11 +302,24 @@ elif df_final is not None:
     with tab4:
         st.header("Análisis de Profundización Total")
         comp_deep = df_filtrado.groupby('Compañía')[['Primas','Siniestros']].sum().reset_index()
+        
+        # Filtro para quitar compañías minúsculas que ensucian el gráfico
+        comp_deep = comp_deep[comp_deep['Primas'] > 0]
+        
         c_d1, c_d2 = st.columns([3,1])
         with c_d1:
-            fig_scat_deep = px.scatter(comp_deep, x="Primas", y="Siniestros", hover_name="Compañía",
-                                     title="Correlación Primas vs Siniestros por Empresa", trendline="ols")
-            st.plotly_chart(fig_scat_deep, use_container_width=True)
+            if not comp_deep.empty:
+                fig_scat_deep = px.scatter(comp_deep, x="Primas", y="Siniestros", 
+                                         hover_name="Compañía",
+                                         size="Primas",
+                                         title="Correlación Primas vs Siniestros por Empresa", 
+                                         trendline="ols")
+                st.plotly_chart(fig_scat_deep, use_container_width=True)
+            else:
+                st.info("No hay datos suficientes para el gráfico de dispersión.")
+                
         with c_d2:
-            st.markdown("**Top Riesgos (Siniestros Altos)**")
-            st.dataframe(comp_deep.sort_values("Siniestros", ascending=False).head(10)[['Compañía', 'Siniestros']], hide_index=True)
+            st.markdown("**Top Riesgos (Mayor Siniestralidad Absoluta)**")
+            top_riesgos = comp_deep.sort_values("Siniestros", ascending=False).head(10)
+            st.dataframe(top_riesgos[['Compañía', 'Siniestros']].style.format({'Siniestros':'${:,.0f}'}), 
+                         hide_index=True, use_container_width=True)

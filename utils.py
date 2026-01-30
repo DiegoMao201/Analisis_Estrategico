@@ -4,14 +4,12 @@ import os
 import datetime
 from fpdf import FPDF
 from openai import OpenAI
-from fuzzywuzzy import process
 
 # ==========================================
 # 1. GESTIÓN DE RUTAS Y CONFIGURACIÓN
 # ==========================================
 def get_file_path(filename):
     """Retorna la ruta absoluta de un archivo en la raíz del proyecto."""
-    # Sube un nivel desde la carpeta donde está utils.py
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
     return os.path.join(base_dir, filename)
 
@@ -21,7 +19,7 @@ def get_api_key():
         return st.secrets["OPENAI_API_KEY"]
     except:
         try:
-            return os.environ["OPENAI_API_KEY"]
+            return os.environ.get("OPENAI_API_KEY")
         except:
             return None
 
@@ -95,25 +93,6 @@ class UltimatePDF(FPDF):
         self.set_text_color(0, 0, 0)
         self.cell(40, 8, value, 0, 0)
 
-    def create_table(self, df):
-        self.set_font('Arial', 'B', 9)
-        self.set_fill_color(0, 74, 143)
-        self.set_text_color(255, 255, 255)
-        col_width = 190 / len(df.columns)
-        for col in df.columns:
-            self.cell(col_width, 8, str(col), 1, 0, 'C', 1)
-        self.ln()
-        self.set_font('Arial', '', 8)
-        self.set_text_color(0, 0, 0)
-        fill = False
-        for i, row in df.iterrows():
-            self.set_fill_color(240, 245, 255) if fill else self.set_fill_color(255, 255, 255)
-            for item in row:
-                txt = str(item)[:28]
-                self.cell(col_width, 7, txt, 1, 0, 'C', fill)
-            self.ln()
-            fill = not fill
-
 # ==========================================
 # 3. LÓGICA DE DATOS UNIFICADA
 # ==========================================
@@ -121,11 +100,12 @@ class UltimatePDF(FPDF):
 def parse_numero_latino(val):
     """Convierte formatos latinos (1.000,00) o mixtos a float puro."""
     if pd.isna(val): return 0.0
+    if isinstance(val, (int, float)): return float(val)
     texto = str(val).strip()
     try: 
         return float(texto)
     except:
-        # Intento de limpieza estándar latino
+        # Intento de limpieza estándar latino: eliminar puntos de mil, cambiar coma por punto
         texto_limpio = texto.replace('.', '').replace(',', '.')
         try: 
             return float(texto_limpio)
@@ -135,116 +115,76 @@ def parse_numero_latino(val):
 @st.cache_data(show_spinner=False)
 def load_plan_accion_procesado(filepath):
     """
-    Carga y procesa el 'Plan de accion 2026.xlsx' con toda la lógica de limpieza
-    del dashboard estratégico.
+    Carga y procesa el archivo Excel. Usa cache para no recargar en cada interacción.
+    Se asume que la estructura pivoteada (Primas/Siniestros) viene de la columna 'Tipo'.
     """
     try:
-        # Detectar extensión para usar el engine correcto
-        if filepath.endswith('.csv'):
-            df = pd.read_csv(filepath, sep=';', engine='python', on_bad_lines='skip', encoding='utf-8', header=0)
-        else:
-            df = pd.read_excel(filepath, engine='openpyxl', header=0)
+        # Carga optimizada
+        df = pd.read_excel(filepath, engine='openpyxl')
         
-        # Normalizar columnas
+        # 1. Limpieza de nombres de columnas
         df.columns = [c.strip() for c in df.columns]
         
-        # Limpieza strings
+        # 2. Limpieza básica de strings
         if 'Compañía' in df.columns: 
             df['Compañía'] = df['Compañía'].astype(str).str.strip()
         
-        # Rellenos básicos
+        # 3. Rellenos de nulos
         if 'Subramo' in df.columns: df['Subramo'] = df['Subramo'].fillna('General')
         if 'Ramo' in df.columns: df['Ramo'] = df['Ramo'].fillna('Otros')
         
-        # Lógica AFILIADO
+        # 4. Estandarización de AFILIADO
         if 'AFILIADO' in df.columns:
             df['AFILIADO'] = df['AFILIADO'].fillna('NO AFILIADO').astype(str).str.strip().str.upper()
             df['AFILIADO'] = df['AFILIADO'].replace({'NO AFILIADOS':'NO AFILIADO', 'AFILIADOS':'AFILIADO'})
 
-        # Conversión Numérica
+        # 5. Conversión Numérica robusta
         if 'USD' in df.columns:
             df['USD'] = df['USD'].apply(parse_numero_latino)
 
-        # Filtros de negocio (excluir ramos específicos)
-        if 'Ramo' in df.columns:
-            df = df[~df['Ramo'].str.upper().isin(['RIESGOS PORTUARIOS', 'RIESGOS PETROLEROS'])]
-
-        # Pivoteo para estructura final
-        # Aseguramos que existan las columnas clave antes de pivotar
-        cols_necesarias = ['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO', 'Tipo', 'USD']
-        if all(col in df.columns for col in cols_necesarias):
+        # 6. Pivoteo Fundamental
+        # Transformamos la columna 'Tipo' (que debe contener "Primas" y "Siniestros" u otros) en columnas reales
+        cols_clave = ['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO']
+        
+        # Verificamos que existan las columnas mínimas para pivotar
+        if all(col in df.columns for col in cols_clave) and 'Tipo' in df.columns and 'USD' in df.columns:
+            
+            # Pivot table
             pivot_df = df.pivot_table(
-                index=['País', 'Año', 'Compañía', 'Ramo', 'Subramo', 'AFILIADO'],
-                columns='Tipo', values='USD', aggfunc='sum', fill_value=0
+                index=cols_clave,
+                columns='Tipo',
+                values='USD',
+                aggfunc='sum',
+                fill_value=0
             ).reset_index()
             
+            # Limpiar nombre del índice de columnas
             pivot_df.columns.name = None
+            
+            # Asegurar que existan Primas y Siniestros aunque no vengan en el Excel
             if 'Primas' not in pivot_df.columns: pivot_df['Primas'] = 0.0
             if 'Siniestros' not in pivot_df.columns: pivot_df['Siniestros'] = 0.0
-
-            pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
-            pivot_df['Siniestralidad'] = (pivot_df['Siniestros'] / pivot_df['Primas']).replace([float('inf'), -float('inf')], 0) * 100
-            pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
             
-            # Normalización de nombre para cruces
-            pivot_df['nombre_norm'] = pivot_df['Compañía'].astype(str).str.lower().str.strip()
+            # Cálculos derivados post-pivot
+            pivot_df['Siniestros'] = pivot_df['Siniestros'].abs() # Asegurar positivo
+            
+            # Evitar división por cero
+            pivot_df['Siniestralidad'] = pivot_df.apply(
+                lambda x: (x['Siniestros'] / x['Primas'] * 100) if x['Primas'] > 0 else 0, axis=1
+            )
+            
+            pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
             
             return pivot_df, None
         else:
-            return df, "Formato de archivo crudo (columnas faltantes para pivot automático)"
+            return df, "Error: Faltan columnas clave (Tipo, USD, País, Año...) para realizar el pivoteo."
 
     except Exception as e:
-        return None, str(e)
-
-@st.cache_data(show_spinner=False)
-def load_simple_excel(filepath):
-    """Carga simple para otros archivos Excel."""
-    try:
-        df = pd.read_excel(filepath)
-        # Crear columna normalizada para cruces si existe nombre/compañía
-        for col in ['Compañía', 'Nombre', 'Empresa', 'Aseguradora']:
-            if col in df.columns:
-                df['nombre_norm'] = df[col].astype(str).str.lower().str.strip()
-                break
-        return df
-    except Exception as e:
-        return None
+        return None, f"Error cargando archivo: {str(e)}"
 
 # ==========================================
-# 4. FUNCIONES DE ANÁLISIS Y AUXILIARES
+# 4. FUNCIONES DE ANÁLISIS AUXILIARES
 # ==========================================
-
-def generar_analisis_ia(contexto_datos, tipo_grafico, api_key):
-    """Motor de Análisis IA."""
-    if not api_key:
-        return "⚠️ **IA Desactivada:** No se detectó la variable de entorno OPENAI_API_KEY."
-    
-    try:
-        client = OpenAI(api_key=api_key)
-        prompt_system = (
-            "Eres un Consultor Estratégico Senior de Seguros (ALSUM). "
-            "Analizas datos para la Junta Directiva. Sé breve, directo y perspicaz."
-        )
-        prompt_user = (
-            f"Analiza estos datos de un {tipo_grafico}:\n"
-            f"{contexto_datos}\n\n"
-            "Responde con este formato Markdown exacto:\n"
-            "**🔍 Qué muestra:** (1 frase describiendo la visualización)\n"
-            "**📊 Interpretación:** (Cómo leer los datos, qué destaca)\n"
-            "**🚀 Acción:** (1 recomendación de negocio imperativa)"
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": prompt_system},
-                {"role": "user", "content": prompt_user}
-            ],
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"❌ Error de conexión IA: {str(e)}"
 
 def crear_vista_pivot_anos(df_input, indice, valor='Primas'):
     """Crea una tabla con los años como columnas y una columna final de Total."""
@@ -262,28 +202,3 @@ def crear_vista_pivot_anos(df_input, indice, valor='Primas'):
         return pivot.reset_index()
     except Exception as e:
         return pd.DataFrame()
-
-def fuzzy_merge(df_left, df_right, key_left, key_right, threshold=80, limit=1):
-    """
-    Realiza un cruce difuso entre dos DataFrames.
-    Retorna df_left con una columna 'match_name' y 'score' basado en df_right.
-    """
-    s = df_right[key_right].tolist()
-    
-    # Función auxiliar para aplicar a cada fila
-    def get_match(x):
-        # Process.extractOne devuelve (match, score, index)
-        match = process.extractOne(x, s)
-        if match and match[1] >= threshold:
-            return match[0], match[1]
-        else:
-            return None, 0
-    
-    # Aplicar la función
-    matches = df_left[key_left].apply(get_match)
-    
-    # Desempaquetar resultados
-    df_left['match_name'] = [m[0] if m else None for m in matches]
-    df_left['match_score'] = [m[1] if m else 0 for m in matches]
-    
-    return df_left
