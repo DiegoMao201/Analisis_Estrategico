@@ -54,10 +54,10 @@ st.markdown("""
 # ==========================================
 # 2. CARGA DE DATOS (Usando Utils)
 # ==========================================
-DATA_FILE = "Plan de acción 2026.xlsx"
+DATA_FILE = "plan_2026.xlsx"
 FULL_PATH = utils.get_file_path(DATA_FILE)
 
-PLAN_ACCION_PATH = utils.get_file_path("Plan de acción 2026.xlsx")
+PLAN_ACCION_PATH = utils.get_file_path("plan_2026.xlsx")
 
 with st.sidebar:
     st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)

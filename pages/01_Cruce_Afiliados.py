@@ -13,7 +13,7 @@ st.title("🔗 Cruce Inteligente de Afiliados ALSUM 2025-2026")
 st.header("1️⃣ Carga de Archivos (Vía Utils)")
 
 # Definición de rutas usando utils
-DATA_FILE = "Plan de acción 2026.xlsx"
+DATA_FILE = "plan_2026.xlsx"
 PLAN_ACCION_PATH = utils.get_file_path(DATA_FILE)
 NUEVOS_AFILIADOS_PATH = utils.get_file_path("nuevos_afiliados.xlsx")
 DIRECTORIO_PATH = utils.get_file_path("Directorio_Afiliados_2025.xlsx")
