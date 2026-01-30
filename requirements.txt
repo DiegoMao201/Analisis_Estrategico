@@ -2,11 +2,9 @@ streamlit
 pandas
 plotly
 openpyxl
-pyarrow
-kaleido==0.2.1
 fpdf2
 openai
-matplotlib
-statsmodels
 fuzzywuzzy
 python-Levenshtein
+matplotlib
+statsmodels
