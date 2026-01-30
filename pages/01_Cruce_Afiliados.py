@@ -16,7 +16,7 @@ ROOT_DIR = os.getcwd()
 # Define las rutas relativas a los archivos en la raíz
 PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de accion 2026.xlsx")
 NUEVOS_AFILIADOS_PATH = os.path.join(ROOT_DIR, "nuevos_afiliados.xlsx")
-DIRECTORIO_PATH = os.path.join(ROOT_DIR, "directorio_Afiliados_2025.xlsx")
+DIRECTORIO_PATH = os.path.join(ROOT_DIR, "Directorio_Afiliados_2025.xlsx")
 
 # Verifica existencia y carga
 if not (os.path.exists(PLAN_ACCION_PATH) and os.path.exists(NUEVOS_AFILIADOS_PATH) and os.path.exists(DIRECTORIO_PATH)):
