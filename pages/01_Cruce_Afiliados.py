@@ -10,8 +10,8 @@ st.title("🔗 Cruce Inteligente de Afiliados ALSUM 2025-2026")
 
 st.header("1️⃣ Carga de Archivos (Automática desde la raíz del repositorio)")
 
-# Calcula la ruta a la raíz del repositorio (un nivel arriba de /pages)
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Siempre busca en el directorio actual de trabajo
+ROOT_DIR = os.getcwd()
 
 # Define las rutas relativas a los archivos en la raíz
 PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de accion 2026.xlsx")
