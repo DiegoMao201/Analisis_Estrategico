@@ -14,7 +14,7 @@ st.header("1️⃣ Carga de Archivos (Automática desde la raíz del repositorio
 ROOT_DIR = os.getcwd()
 
 # Define las rutas relativas a los archivos en la raíz
-PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de accion 2026.xlsx")
+PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de acción 2026.xlsx")
 NUEVOS_AFILIADOS_PATH = os.path.join(ROOT_DIR, "nuevos_afiliados.xlsx")
 DIRECTORIO_PATH = os.path.join(ROOT_DIR, "Directorio_Afiliados_2025.xlsx")
 
@@ -29,9 +29,9 @@ if not (os.path.exists(PLAN_ACCION_PATH) and os.path.exists(NUEVOS_AFILIADOS_PAT
 
 try:
     plan_accion = pd.read_excel(PLAN_ACCION_PATH)
-    st.success("Plan de accion 2026.xlsx cargado correctamente.")
+    st.success("Plan de acción 2026.xlsx cargado correctamente.")
 except Exception as e:
-    st.error(f"Error cargando Plan de accion 2026.xlsx: {e}")
+    st.error(f"Error cargando Plan de acción 2026.xlsx: {e}")
     st.stop()
 
 try:
@@ -48,7 +48,7 @@ except Exception as e:
     st.error(f"Error cargando Directorio_Afiliados_2025.xlsx: {e}")
     st.stop()
 
-st.write("Primeras filas de Plan de accion 2026.xlsx:")
+st.write("Primeras filas de Plan de acción 2026.xlsx:")
 st.dataframe(plan_accion.head())
 st.write("Primeras filas de nuevos_afiliados.xlsx:")
 st.dataframe(nuevos_afiliados.head())
