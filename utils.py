@@ -180,6 +180,7 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
             return df, "Error: Faltan columnas clave (Tipo, USD, País, Año...) para realizar el pivoteo."
 
     except Exception as e:
+        print(f"Error cargando archivo: {str(e)}")
         return None, f"Error cargando archivo: {str(e)}"
 
 # ==========================================

@@ -4,6 +4,7 @@ import plotly.express as px
 import datetime
 import os
 from openai import OpenAI
+import openpyxl
 
 # Importar utilidades propias (asegúrate de que utils.py esté en la misma carpeta)
 import utils
