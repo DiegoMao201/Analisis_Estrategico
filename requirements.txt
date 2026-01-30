@@ -8,3 +8,5 @@ fpdf2
 openai
 matplotlib
 statsmodels
+fuzzywuzzy
+python-Levenshtein
