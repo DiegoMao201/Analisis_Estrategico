@@ -11,7 +11,8 @@ st.title("🔗 Cruce Inteligente de Afiliados ALSUM 2025-2026")
 st.header("1️⃣ Carga de Archivos (Automática desde la raíz del repositorio)")
 
 # Siempre busca en el directorio actual de trabajo
-ROOT_DIR = os.getcwd()
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.abspath(os.path.join(ROOT_DIR, ".."))  # Sube a la raíz del repo
 
 # Define las rutas relativas a los archivos en la raíz
 PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de acción 2026.xlsx")
