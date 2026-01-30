@@ -10,10 +10,10 @@ from fuzzywuzzy import process
 # 1. GESTIÓN DE RUTAS Y CONFIGURACIÓN
 # ==========================================
 def get_file_path(filename):
-    """Retorna la ruta absoluta de un archivo en el directorio base."""
-    # Busca en el directorio actual del script
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(current_dir, filename)
+    """Retorna la ruta absoluta de un archivo en la raíz del proyecto."""
+    # Sube un nivel desde la carpeta donde está utils.py
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
+    return os.path.join(base_dir, filename)
 
 def get_api_key():
     """Recupera la API Key de st.secrets o variables de entorno."""
