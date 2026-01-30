@@ -18,26 +18,19 @@ PLAN_ACCION_PATH = utils.get_file_path(DATA_FILE)
 NUEVOS_AFILIADOS_PATH = utils.get_file_path("nuevos_afiliados.xlsx")
 DIRECTORIO_PATH = utils.get_file_path("Directorio_Afiliados_2025.xlsx")
 
-# Verificación inicial
 if not (os.path.exists(PLAN_ACCION_PATH) and os.path.exists(NUEVOS_AFILIADOS_PATH) and os.path.exists(DIRECTORIO_PATH)):
-    st.error("❌ Faltan archivos en el directorio raíz. Verifique: Plan de accion 2026, nuevos_afiliados, Directorio_Afiliados_2025")
+    st.error("❌ Faltan archivos en el directorio raíz. Verifique: plan_2026.xlsx, nuevos_afiliados.xlsx, Directorio_Afiliados_2025.xlsx")
     st.stop()
 
-# Carga usando Utils (Usamos load_plan_accion_procesado para el principal para tener nombres normalizados)
-try:
-    plan_accion, err = utils.load_plan_accion_procesado(PLAN_ACCION_PATH)
-    if err: st.warning(f"Advertencia en Plan Acción: {err}")
-    else: st.success("Plan de acción cargado y procesado correctamente.")
-    
-    nuevos_afiliados = utils.load_simple_excel(NUEVOS_AFILIADOS_PATH)
-    st.success("nuevos_afiliados.xlsx cargado correctamente.")
-    
-    directorio = utils.load_simple_excel(DIRECTORIO_PATH)
-    st.success("Directorio_Afiliados_2025.xlsx cargado correctamente.")
+plan_accion, err = utils.load_plan_accion_procesado(PLAN_ACCION_PATH, sheet_name="Afiliados")
+if err: st.warning(f"Advertencia en Plan Acción: {err}")
+else: st.success("plan_2026.xlsx (hoja 'Afiliados') cargado y procesado correctamente.")
 
-except Exception as e:
-    st.error(f"Error crítico en carga: {e}")
-    st.stop()
+nuevos_afiliados = utils.load_excel_sheet(NUEVOS_AFILIADOS_PATH, sheet_name="Hoja1")
+st.success("nuevos_afiliados.xlsx (hoja 'Hoja1') cargado correctamente.")
+
+directorio = utils.load_excel_sheet(DIRECTORIO_PATH, sheet_name="Directorio 2025")
+st.success("Directorio_Afiliados_2025.xlsx (hoja 'Directorio 2025') cargado correctamente.")
 
 st.write("Primeras filas de Plan de acción 2026 (Procesado):")
 st.dataframe(plan_accion.head())

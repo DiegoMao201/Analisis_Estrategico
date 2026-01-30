@@ -57,21 +57,8 @@ st.markdown("""
 DATA_FILE = "plan_2026.xlsx"
 FULL_PATH = utils.get_file_path(DATA_FILE)
 
-with st.sidebar:
-    st.image("https://www.alsum.co/wp-content/uploads/2022/08/LOGO-ALSUM-BLANCO-1-1024x282.png", use_container_width=True)
-    st.header("Centro de Mando")
-    st.info("📊 ALSUM Intelligence System")
-    st.caption(f"Archivo base: {DATA_FILE}")
-
-# Validación de existencia del archivo
-if not os.path.exists(FULL_PATH):
-    st.error(f"❌ No se encontró el archivo de datos: {FULL_PATH}")
-    st.warning("Por favor, asegúrate de que 'plan_2026.xlsx' esté en la carpeta del proyecto.")
-    st.stop()
-
-# Carga de datos (Esto usa caché en utils, por lo que es rápido tras la primera carga)
-with st.spinner('Inicializando protocolos de análisis... (Cargando datos)'):
-    df_final, error = utils.load_plan_accion_procesado(FULL_PATH)
+# Carga de datos (usa hoja "Afiliados")
+df_final, error = utils.load_plan_accion_procesado(FULL_PATH, sheet_name="Afiliados")
 
 if error:
     st.error(f"❌ {error}")

@@ -113,14 +113,14 @@ def parse_numero_latino(val):
             return 0.0
 
 @st.cache_data(show_spinner=False)
-def load_plan_accion_procesado(filepath):
+def load_plan_accion_procesado(filepath, sheet_name=None):
     """
     Carga y procesa el archivo Excel. Usa cache para no recargar en cada interacción.
-    Se asume que la estructura pivoteada (Primas/Siniestros) viene de la columna 'Tipo'.
+    Permite especificar la hoja.
     """
     try:
         # Carga optimizada
-        df = pd.read_excel(filepath, engine='openpyxl')
+        df = pd.read_excel(filepath, engine='openpyxl', sheet_name=sheet_name)
         
         # 1. Limpieza de nombres de columnas
         df.columns = [c.strip() for c in df.columns]
@@ -202,3 +202,9 @@ def crear_vista_pivot_anos(df_input, indice, valor='Primas'):
         return pivot.reset_index()
     except Exception as e:
         return pd.DataFrame()
+
+def load_excel_sheet(filepath, sheet_name):
+    """Carga un archivo Excel y una hoja específica, limpiando nombres de columnas."""
+    df = pd.read_excel(filepath, sheet_name=sheet_name, engine="openpyxl")
+    df.columns = [c.strip() for c in df.columns]
+    return df
