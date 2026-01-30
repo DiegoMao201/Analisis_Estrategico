@@ -8,16 +8,19 @@ st.set_page_config(page_title="Cruce Inteligente de Afiliados", layout="wide", p
 
 st.title("🔗 Cruce Inteligente de Afiliados ALSUM 2025-2026")
 
-st.header("1️⃣ Carga de Archivos (Automática desde el repositorio)")
+st.header("1️⃣ Carga de Archivos (Automática desde la raíz del repositorio)")
 
-# Define las rutas relativas a los archivos
-PLAN_ACCION_PATH = "Plan de accion 2026.xlsx"
-NUEVOS_AFILIADOS_PATH = "nuevos_afiliados.xlsx"
-DIRECTORIO_PATH = "directorio_Afiliados_2025.xlsx"
+# Calcula la ruta a la raíz del repositorio (un nivel arriba de /pages)
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# Define las rutas relativas a los archivos en la raíz
+PLAN_ACCION_PATH = os.path.join(ROOT_DIR, "Plan de accion 2026.xlsx")
+NUEVOS_AFILIADOS_PATH = os.path.join(ROOT_DIR, "nuevos_afiliados.xlsx")
+DIRECTORIO_PATH = os.path.join(ROOT_DIR, "directorio_Afiliados_2025.xlsx")
 
 # Verifica existencia y carga
 if not (os.path.exists(PLAN_ACCION_PATH) and os.path.exists(NUEVOS_AFILIADOS_PATH) and os.path.exists(DIRECTORIO_PATH)):
-    st.error("❌ No se encontraron todos los archivos requeridos en el repositorio. Asegúrate de que existan:\n"
+    st.error("❌ No se encontraron todos los archivos requeridos en la raíz del repositorio. Asegúrate de que existan:\n"
              f"- {PLAN_ACCION_PATH}\n- {NUEVOS_AFILIADOS_PATH}\n- {DIRECTORIO_PATH}")
     st.stop()
 
