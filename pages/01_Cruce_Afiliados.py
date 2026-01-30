@@ -2,29 +2,33 @@ import streamlit as st
 import pandas as pd
 from fuzzywuzzy import process
 import numpy as np
+import os
 
 st.set_page_config(page_title="Cruce Inteligente de Afiliados", layout="wide", page_icon="🔗")
 
 st.title("🔗 Cruce Inteligente de Afiliados ALSUM 2025-2026")
 
-# 1. Carga de archivos
-st.header("1️⃣ Carga de Archivos")
-col1, col2, col3 = st.columns(3)
-with col1:
-    plan_accion_file = st.file_uploader("Plan de acción 2026", type=["xlsx"])
-with col2:
-    nuevos_afiliados_file = st.file_uploader("Nuevos Afiliados", type=["xlsx"])
-with col3:
-    directorio_file = st.file_uploader("Directorio Afiliados 2025", type=["xlsx"])
+st.header("1️⃣ Carga de Archivos (Automática desde el repositorio)")
 
-if not (plan_accion_file and nuevos_afiliados_file and directorio_file):
-    st.info("Sube los tres archivos para continuar.")
+# Define las rutas relativas a los archivos
+PLAN_ACCION_PATH = "Plan de accion 2026.xlsx"
+NUEVOS_AFILIADOS_PATH = "nuevos_afiliados.xlsx"
+DIRECTORIO_PATH = "directorio_Afiliados_2025.xlsx"
+
+# Verifica existencia y carga
+if not (os.path.exists(PLAN_ACCION_PATH) and os.path.exists(NUEVOS_AFILIADOS_PATH) and os.path.exists(DIRECTORIO_PATH)):
+    st.error("❌ No se encontraron todos los archivos requeridos en el repositorio. Asegúrate de que existan:\n"
+             f"- {PLAN_ACCION_PATH}\n- {NUEVOS_AFILIADOS_PATH}\n- {DIRECTORIO_PATH}")
     st.stop()
 
+plan_accion = pd.read_excel(PLAN_ACCION_PATH)
+nuevos_afiliados = pd.read_excel(NUEVOS_AFILIADOS_PATH)
+directorio = pd.read_excel(DIRECTORIO_PATH)
+
 # 2. Lectura de datos
-plan_accion = pd.read_excel(plan_accion_file)
-nuevos_afiliados = pd.read_excel(nuevos_afiliados_file)
-directorio = pd.read_excel(directorio_file)
+plan_accion = pd.read_excel(PLAN_ACCION_PATH)
+nuevos_afiliados = pd.read_excel(NUEVOS_AFILIADOS_PATH)
+directorio = pd.read_excel(DIRECTORIO_PATH)
 
 # 3. Normalización de nombres
 def normalizar_nombre(nombre):
