@@ -95,10 +95,14 @@ df_filtrado = df_final.copy()
 
 # Filtro AÑO
 if 'Año' in df_final.columns:
-    anios_disp = sorted(df_final['Año'].unique())
+    # Solo mostrar los años de estudio
+    anios_estudio = [2022, 2023, 2024, 2025]
+    anios_disp = [a for a in anios_estudio if a in df_final['Año'].unique()]
     filtro_anios = st.sidebar.multiselect("📅 Año Fiscal", anios_disp, default=anios_disp)
-    if filtro_anios:
-        df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+    # Filtrar el DataFrame solo por esos años
+    df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+else:
+    filtro_anios = []
 
 # Filtro PAÍS
 if 'País' in df_final.columns:
@@ -117,7 +121,9 @@ if 'AFILIADO' in df_final.columns:
 
 # Filtro RAMO
 if 'Ramo' in df_final.columns:
-    ramos_disp = sorted(df_final['Ramo'].unique())
+    # Solo mostrar los ramos de interés
+    ramos_estudio = ["Carga", "Cascos", "RC"]
+    ramos_disp = [r for r in ramos_estudio if r in df_final['Ramo'].unique()]
     filtro_ramos = st.sidebar.multiselect("📦 Ramo / Producto", ramos_disp, default=ramos_disp)
     if filtro_ramos:
         df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
@@ -145,7 +151,11 @@ with st.expander("🛠️ Herramientas de Análisis Profundo", expanded=False):
             if sel_comp:
                 df_filtrado = df_filtrado[df_filtrado['Compañía'].isin(sel_comp)]
     with c_f2:
-        metrica_focus = st.selectbox("Métrica para Tablas:", ["Primas", "Siniestros", "Resultado Técnico"])
+        metrica_focus = st.selectbox(
+            "Métrica para Tablas:",
+            ["Primas", "Siniestros", "Resultado Técnico"],
+            index=0
+        )
 
 # Verificar si quedaron datos después de filtrar
 if df_filtrado.empty:
@@ -216,15 +226,24 @@ with tab1:
         )
 
     st.markdown("### 🏆 Ranking de Compañías")
-    # Tabla de pivote por años
-    pivot_comp = utils.crear_vista_pivot_anos(df_filtrado, 'Compañía', valor=metrica_focus)
-    
+
+    # Agrupar y mostrar todas las columnas relevantes
+    pivot_comp = df_filtrado.groupby(['Compañía', 'País']).agg({
+        'Primas': 'sum',
+        'Siniestros': 'sum',
+        'Resultado Técnico': 'sum'
+    }).reset_index()
+    pivot_comp['Siniestralidad'] = (pivot_comp['Siniestros'] / pivot_comp['Primas'] * 100).fillna(0)
+
     # Formateo dinámico de columnas numéricas
-    cols_num = [c for c in pivot_comp.columns if c != 'Compañía']
     st.dataframe(
-        pivot_comp.head(50).style
-        .format({c: '${:,.0f}' for c in cols_num})
-        .background_gradient(subset=['TOTAL CONSOLIDADO'], cmap='Blues'),
+        pivot_comp.sort_values('Primas', ascending=False).style
+            .format({
+                'Primas': '${:,.0f}',
+                'Siniestros': '${:,.0f}',
+                'Resultado Técnico': '${:,.0f}',
+                'Siniestralidad': '{:.1f}%'
+            }),
         use_container_width=True,
         hide_index=True
     )
@@ -393,3 +412,14 @@ with tab4:
         
     st.markdown("### Tabla de Datos Completa")
     st.dataframe(df_filtrado, use_container_width=True)
+
+st.markdown("### 🌎 Empresas por País")
+
+empresas_por_pais = df_filtrado.groupby('País')['Compañía'].nunique().reset_index()
+empresas_por_pais.columns = ['País', 'Empresas']
+
+st.dataframe(
+    empresas_por_pais.sort_values('Empresas', ascending=False),
+    use_container_width=True,
+    hide_index=True
+)
