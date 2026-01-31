@@ -122,6 +122,13 @@ if 'Ramo' in df_final.columns:
     if filtro_ramos:
         df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
 
+# Filtro CATEGORÍA
+if 'Categoria' in df_final.columns:
+    tipos_disp = sorted(df_final['Categoria'].dropna().unique())
+    filtro_tipo = st.sidebar.multiselect("💠 Tipo de Afiliado", tipos_disp, default=tipos_disp)
+    if filtro_tipo:
+        df_filtrado = df_filtrado[df_filtrado['Categoria'].isin(filtro_tipo)]
+
 # ==========================================
 # 4. ÁREA PRINCIPAL
 # ==========================================
@@ -146,18 +153,16 @@ if df_filtrado.empty:
     st.stop()
 
 # --- KPIs GLOBALES (ENCABEZADO) ---
-escala = 1e9 # Billones
 primas_tot = df_filtrado['Primas'].sum()
 siniestros_tot = df_filtrado['Siniestros'].sum()
 res_tec = df_filtrado['Resultado Técnico'].sum()
-# Cálculo seguro de ratio
 ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
 
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("💰 Primas Totales (USD)", f"${primas_tot/escala:,.2f}B", delta="Volumen")
-k2.metric("🔥 Siniestros Totales", f"${siniestros_tot/escala:,.2f}B", delta="Costo", delta_color="inverse")
+k1.metric("💰 Primas Totales (USD)", f"${primas_tot:,.0f}", delta="Volumen")
+k2.metric("🔥 Siniestros Totales", f"${siniestros_tot:,.0f}", delta="Costo", delta_color="inverse")
 k3.metric("📉 Siniestralidad", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta (65%)")
-k4.metric("📈 Resultado Técnico", f"${res_tec/escala:,.2f}B")
+k4.metric("📈 Resultado Técnico", f"${res_tec:,.0f}")
 
 st.markdown("---")
 
@@ -178,6 +183,8 @@ with tab1:
     # Preparar datos
     pais_df = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
     pais_df['Siniestralidad'] = (pais_df['Siniestros'] / pais_df['Primas'] * 100).fillna(0)
+    # Antes de graficar, asegúrate que 'Primas' sea >= 0
+    pais_df['Primas_plot'] = pais_df['Primas'].abs()
     
     c1, c2 = st.columns([2, 1])
     
@@ -187,7 +194,7 @@ with tab1:
             pais_df, 
             x='Primas', 
             y='Siniestralidad',
-            size='Primas', 
+            size='Primas_plot',  # Usar la columna corregida
             color='País',
             hover_name='País',
             title="Matriz de Desempeño: Volumen vs Rentabilidad",
@@ -244,6 +251,38 @@ with tab2:
     st.markdown("#### Detalle Anual por Ramo")
     pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', valor=metrica_focus)
     st.dataframe(pivot_ramo, use_container_width=True)
+
+    # --- Participación de Afiliados vs No Afiliados ---
+    st.markdown("### 🏅 Participación de Afiliados vs No Afiliados en el Mercado Potencial")
+    if 'AFILIADO' in df_filtrado.columns and 'Primas' in df_filtrado.columns:
+        total_primas = df_filtrado['Primas'].sum()
+        afiliados = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']['Primas'].sum()
+        no_afiliados = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']['Primas'].sum()
+        labels = ['Afiliados', 'No Afiliados']
+        values = [afiliados, no_afiliados]
+        fig_pie = px.pie(
+            names=labels,
+            values=values,
+            title="Participación de Primas: Afiliados vs No Afiliados",
+            color=labels,
+            color_discrete_map={'Afiliados': '#004A8F', 'No Afiliados': '#B0B0B0'}
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
+        st.info(f"**Afiliados:** {afiliados/total_primas:.1%} del mercado | **No Afiliados:** {no_afiliados/total_primas:.1%}")
+    else:
+        st.warning("No se encontraron columnas 'AFILIADO' y 'Primas' para calcular la participación.")
+
+    # --- Participación por Tipo de Afiliado (Miembro/Asociado) ---
+    if 'Categoria' in df_filtrado.columns and 'Primas' in df_filtrado.columns:
+        tipo_part = df_filtrado.groupby('Categoria')['Primas'].sum().reset_index()
+        fig_tipo = px.pie(
+            tipo_part,
+            names='Categoria',
+            values='Primas',
+            title="Participación por Tipo de Afiliado (Miembro/Asociado)",
+            color='Categoria'
+        )
+        st.plotly_chart(fig_tipo, use_container_width=True)
 
 # === TAB 3: GENERADOR PDF IA ===
 with tab3:
