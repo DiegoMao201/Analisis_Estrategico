@@ -3,8 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
-import utils  # Se asume que tu librería utils.py existe y funciona
-from openai import OpenAI
+import utils  # Se asume que existe tu librería original 'utils.py'
+from openai import OpenAI # Cliente oficial de OpenAI
 
 # ==============================================================================
 # 1. CONFIGURACIÓN ESTRATÉGICA Y ESTILOS
@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS para dar sensación "Premium" y profesional
+# Estilos CSS Premium
 st.markdown("""
 <style>
     .stApp { background-color: #F4F6F9; }
@@ -48,35 +48,32 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. FUNCIONES CORE Y UTILIDADES DE NORMALIZACIÓN
+# 2. FUNCIONES AUXILIARES DE ROBUSTEZ (NORMALIZACIÓN)
 # ==============================================================================
 
-def normalize_text_cols(df):
-    """
-    Convierte todas las columnas de texto a mayúsculas y elimina espacios extra
-    para asegurar coincidencias precisas (Case Insensitive).
-    """
-    for col in df.select_dtypes(include=['object']):
-        try:
-            df[col] = df[col].astype(str).str.strip().str.upper()
-            # Convertir 'NAN' o 'NAT' string a None real para limpieza
-            df[col] = df[col].replace(['NAN', 'NAT', 'NONE'], None)
-        except:
-            pass
-    return df
+def normalize_text(series):
+    """Convierte una serie a string, minúsculas y quita espacios para comparaciones precisas."""
+    return series.astype(str).str.strip().str.lower()
 
-def find_column_fuzzy(columns, keywords):
+def find_col(df, keywords):
     """
-    Busca una columna que contenga las palabras clave, ignorando mayúsculas/minúsculas.
+    Busca una columna en el DataFrame que contenga alguna de las keywords.
+    Es insensible a mayúsculas/minúsculas y acentos.
     Retorna el nombre real de la columna o None.
     """
-    cols_upper = [str(c).upper() for c in columns]
-    keywords_upper = [k.upper() for k in keywords]
+    if df is None: return None
+    # Normalizar nombres de columnas del DF
+    cols_norm = {c.lower().strip().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u'): c for c in df.columns}
     
-    for i, col in enumerate(cols_upper):
-        # Si todas las palabras clave están en el nombre de la columna
-        if all(k in col for k in keywords_upper):
-            return columns[i]
+    for k in keywords:
+        k_norm = k.lower().strip().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u')
+        # Busqueda exacta primero
+        if k_norm in cols_norm:
+            return cols_norm[k_norm]
+        # Busqueda parcial (contiene)
+        for c_norm, c_real in cols_norm.items():
+            if k_norm in c_norm:
+                return c_real
     return None
 
 def deduplicate_columns(df):
@@ -88,9 +85,13 @@ def deduplicate_columns(df):
     return df
 
 def clean_column_names(df):
-    # Elimina espacios y normaliza nombres de columnas
-    df.columns = [str(c).strip().replace(' ', '_') for c in df.columns]
+    # Elimina espacios extra en los nombres de columnas
+    df.columns = [str(c).strip() for c in df.columns]
     return df
+
+# ==============================================================================
+# 3. CARGA Y PROCESAMIENTO DE DATOS (LÓGICA MEJORADA)
+# ==============================================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data_master():
@@ -101,8 +102,7 @@ def load_data_master():
     try:
         df_dir = utils.load_excel_sheet(dir_path, sheet_name="Directorio 2025")
         df_dir = deduplicate_columns(df_dir)
-        # Normalización para precisión
-        df_dir = normalize_text_cols(df_dir)
+        df_dir = clean_column_names(df_dir)
     except Exception as e:
         return None, None, None, f"Error cargando Directorio: {str(e)}"
     
@@ -114,28 +114,42 @@ def load_data_master():
             df_nuevos = pd.read_excel(dir_path, sheet_name=sheet_candidates[0])
             df_nuevos = clean_column_names(df_nuevos)
             
-            # Renombrado Estratégico
+            # Renombrado Estratégico (Normalización inicial)
             rename_map = {
                 'Tipo_de_Compañía': 'Categoria',
                 'Compañía': 'Empresa',
                 'Tipo_de_Afiliado': 'Tipo_de_Afiliado',
                 'Tipo_Afiliado': 'Tipo_de_Afiliado',
             }
-            df_nuevos = df_nuevos.rename(columns=rename_map)
+            # Aplicar renombrado si las columnas existen (insensible a mayúsculas)
+            cols_actuales = {c.lower(): c for c in df_nuevos.columns}
+            map_final = {}
+            for k, v in rename_map.items():
+                col_found = find_col(df_nuevos, [k])
+                if col_found:
+                    map_final[col_found] = v
+            
+            df_nuevos = df_nuevos.rename(columns=map_final)
             df_nuevos = deduplicate_columns(df_nuevos)
             
-            # Normalización antes del cruce
-            df_nuevos = normalize_text_cols(df_nuevos)
+            # --- LOGICA DE ENRIQUECIMIENTO (PAÍS) ROBUSTA ---
+            # Buscamos columnas clave en Directorio
+            col_pais_dir = find_col(df_dir, ['país', 'pais', 'location'])
+            col_empresa_dir = find_col(df_dir, ['empresa', 'compañía', 'compañia', 'nombre'])
             
-            # Enriquecer con país desde Directorio
-            col_pais_dir = find_column_fuzzy(df_dir.columns, ['PAIS'])
-            col_empresa_dir = find_column_fuzzy(df_dir.columns, ['EMPRESA']) or find_column_fuzzy(df_dir.columns, ['COMPAÑÍA'])
+            col_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
             
-            if col_pais_dir and col_empresa_dir and 'Empresa' in df_nuevos.columns:
-                mapa_pais = dict(zip(df_dir[col_empresa_dir], df_dir[col_pais_dir]))
-                df_nuevos['País_Detectado'] = df_nuevos['Empresa'].map(mapa_pais).fillna('SIN ASIGNAR')
+            if col_pais_dir and col_empresa_dir and col_empresa_nuevos:
+                # Crear diccionario normalizado (minusculas -> Pais)
+                keys = df_dir[col_empresa_dir].astype(str).str.strip().str.lower()
+                values = df_dir[col_pais_dir]
+                mapa_pais = dict(zip(keys, values))
+                
+                # Mapear
+                claves_nuevos = df_nuevos[col_empresa_nuevos].astype(str).str.strip().str.lower()
+                df_nuevos['País_Detectado'] = claves_nuevos.map(mapa_pais).fillna('Sin Asignar')
             else:
-                df_nuevos['País_Detectado'] = 'NO DATA'
+                df_nuevos['País_Detectado'] = 'No Data (Faltan Columnas)'
         else:
             return None, None, None, "No se encontró pestaña 'Nuevos'."
     except Exception as e:
@@ -144,18 +158,18 @@ def load_data_master():
     # 3. Plan 2026
     df_plan, err = utils.load_plan_accion_procesado(plan_path)
     if err: return None, None, None, f"Error Plan: {err}"
-    if df_plan is not None:
-        df_plan = normalize_text_cols(df_plan)
     
     return df_dir, df_nuevos, df_plan, None
 
 def generate_excel_download(df_nuevos, extra_sheets=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_nuevos.to_excel(writer, sheet_name='Nuevos_Detallado', index=False)
-        if 'País_Detectado' in df_nuevos.columns:
-            resumen_pais = df_nuevos.groupby('País_Detectado').size().reset_index(name='Conteo')
-            resumen_pais.to_excel(writer, sheet_name='Resumen_Pais', index=False)
+        if df_nuevos is not None:
+            df_nuevos.to_excel(writer, sheet_name='Nuevos_Detallado', index=False)
+            if 'País_Detectado' in df_nuevos.columns:
+                resumen_pais = df_nuevos.groupby('País_Detectado').size().reset_index(name='Conteo')
+                resumen_pais.to_excel(writer, sheet_name='Resumen_Pais', index=False)
+        
         # Hojas extra
         if extra_sheets:
             for name, df in extra_sheets.items():
@@ -166,17 +180,17 @@ def generate_excel_download(df_nuevos, extra_sheets=None):
 # --- FUNCIÓN IA ---
 def consultar_gpt4(api_key, prompt, data_context):
     if not api_key:
-        return "⚠️ No se detectó la API Key."
+        return "⚠️ No se detectó la API Key en utils."
     
     client = OpenAI(api_key=api_key)
     full_prompt = f"""
-    Actúa como un Analista Senior de Estrategia y Seguros. 
-    Analiza los siguientes datos resumidos:
+    Actúa como un Analista Senior de Estrategia y Seguros de ALSUM. 
+    Analiza los siguientes datos:
     {data_context}
     
     PREGUNTA DEL USUARIO: {prompt}
     
-    Responde con insights accionables. Sé directo y profesional en Español.
+    Responde con insights accionables, puntos clave y recomendaciones estratégicas. Sé directo y profesional.
     """
     try:
         response = client.chat.completions.create(
@@ -186,31 +200,37 @@ def consultar_gpt4(api_key, prompt, data_context):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error API: {str(e)}"
+        return f"Error API OpenAI: {str(e)}"
 
 # ==============================================================================
-# 3. INTERFAZ DE USUARIO (MAIN)
+# 4. INTERFAZ DE USUARIO (MAIN)
 # ==============================================================================
 
 def main():
     # --- SIDEBAR GLOBAL ---
     with st.sidebar:
         st.header("⚙️ Configuración & IA")
-        st.info("Sistema cargado. Modo Precisión Activado (Ignora mayúsculas/minúsculas).")
+        api_key = utils.get_api_key()
+        if api_key:
+            st.success("API Key Detectada")
+        else:
+            st.warning("API Key No Detectada")
+            
+        st.info("Sistema cargado y optimizado.")
 
     col_logo, col_title, col_download = st.columns([1, 4, 2])
     with col_title:
         st.title("ALSUM Analytics | Estrategia 360º")
-        st.markdown("**Gestión de Directorio, Inteligencia de Mercado y KPIs**")
+        st.markdown("**Inteligencia de Mercado & Gestión de Afiliados**")
         
-    with st.spinner("🔄 Procesando y normalizando matrices de datos..."):
+    with st.spinner("🔄 Procesando matrices de datos y normalizando textos..."):
         df_dir, df_nuevos, df_plan, error_msg = load_data_master()
         
     if error_msg:
         st.error(error_msg)
         st.stop()
         
-    # --- DEFINICIÓN DE TABS (NUEVO ORDEN) ---
+    # --- TABS REORGANIZADOS ---
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🌍 Dashboard Nuevos",
         "📋 Directorio & Desglose",
@@ -220,279 +240,387 @@ def main():
     ])
 
     # ==========================================================================
-    # TAB 1: DASHBOARD NUEVOS (ORIGINAL MEJORADO)
+    # TAB 1: DASHBOARD NUEVOS (LÓGICA ORIGINAL OPTIMIZADA)
     # ==========================================================================
     with tab1:
         st.subheader("Panel de Control: Nuevas Incorporaciones")
         
-        # Filtros
-        with st.expander("🔎 Filtros de Nuevos Afiliados", expanded=True):
+        # Detectar columnas clave con la función robusta
+        c_pais_nuevos = find_col(df_nuevos, ['país', 'pais', 'detectado'])
+        c_cat_nuevos = find_col(df_nuevos, ['categoria', 'tipo compañía', 'tipo compañia'])
+        c_tipo_nuevos = find_col(df_nuevos, ['tipo de afiliado', 'tipo afiliado', 'tipo'])
+        c_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
+
+        # --- FILTROS ---
+        with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
             col_f1, col_f2, col_f3 = st.columns(3)
             
-            paises_disp = sorted(df_nuevos['País_Detectado'].unique()) if 'País_Detectado' in df_nuevos.columns else []
-            sel_paises = col_f1.multiselect("Filtrar por País", paises_disp, default=paises_disp)
+            sel_paises = []
+            if c_pais_nuevos:
+                paises_disp = sorted(df_nuevos[c_pais_nuevos].dropna().astype(str).unique())
+                sel_paises = col_f1.multiselect("Filtrar por País", paises_disp, default=paises_disp)
             
-            col_cat_nuevos = find_column_fuzzy(df_nuevos.columns, ['CATEGORIA'])
-            cats_disp = sorted(df_nuevos[col_cat_nuevos].unique()) if col_cat_nuevos else []
-            sel_cat = col_f2.multiselect("Filtrar por Categoría", cats_disp, default=cats_disp)
+            sel_cat = []
+            if c_cat_nuevos:
+                cats_disp = sorted(df_nuevos[c_cat_nuevos].dropna().astype(str).unique())
+                sel_cat = col_f2.multiselect("Filtrar por Categoría", cats_disp, default=cats_disp)
             
-            col_tipo_nuevos = find_column_fuzzy(df_nuevos.columns, ['TIPO', 'AFILIADO'])
-            tipos_disp = sorted(df_nuevos[col_tipo_nuevos].unique()) if col_tipo_nuevos else []
-            sel_tipo = col_f3.multiselect("Filtrar por Tipo", tipos_disp, default=tipos_disp)
+            sel_tipo = []
+            if c_tipo_nuevos:
+                tipos_disp = sorted(df_nuevos[c_tipo_nuevos].dropna().astype(str).unique())
+                sel_tipo = col_f3.multiselect("Filtrar por Tipo Afiliado", tipos_disp, default=tipos_disp)
 
-        # Aplicación Filtros
+        # --- APLICACIÓN DE FILTROS ---
         df_view = df_nuevos.copy()
-        if sel_paises and 'País_Detectado' in df_view.columns:
-            df_view = df_view[df_view['País_Detectado'].isin(sel_paises)]
-        if sel_cat and col_cat_nuevos:
-            df_view = df_view[df_view[col_cat_nuevos].isin(sel_cat)]
-        if sel_tipo and col_tipo_nuevos:
-            df_view = df_view[df_view[col_tipo_nuevos].isin(sel_tipo)]
+        if c_pais_nuevos and sel_paises:
+            df_view = df_view[df_view[c_pais_nuevos].isin(sel_paises)]
+        if c_cat_nuevos and sel_cat:
+            df_view = df_view[df_view[c_cat_nuevos].isin(sel_cat)]
+        if c_tipo_nuevos and sel_tipo:
+            df_view = df_view[df_view[c_tipo_nuevos].isin(sel_tipo)]
 
-        # Cruce Financiero (si existe en Plan)
+        # --- CRUCE CON PLAN (PRIMAS/SINIESTROS) ---
         has_finance = False
-        col_plan_comp = find_column_fuzzy(df_plan.columns, ['COMPAÑÍA']) or find_column_fuzzy(df_plan.columns, ['EMPRESA'])
-        if col_plan_comp and 'USD' in df_plan.columns:
-             # Agrupar plan
-             plan_pivot = df_plan.pivot_table(
-                index=[col_plan_comp], columns='Tipo', values='USD', aggfunc='sum', fill_value=0
-             ).reset_index()
-             
-             if 'Empresa' in df_view.columns:
-                 df_view = pd.merge(
-                    df_view,
-                    plan_pivot,
-                    left_on='Empresa', right_on=col_plan_comp, how='left'
-                 )
-                 has_finance = True
-
-        # KPIs Visuales
-        st.markdown("### 📊 Indicadores Clave")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Nuevas Empresas", len(df_view))
-        k2.metric("Países", df_view['País_Detectado'].nunique() if 'País_Detectado' in df_view.columns else 0)
+        c_plan_cia = find_col(df_plan, ['compañía', 'empresa', 'nombre'])
+        c_plan_tipo = find_col(df_plan, ['tipo']) # Primas/Siniestros
+        c_plan_usd = find_col(df_plan, ['usd', 'valor', 'monto'])
         
-        miembros_nuevos = 0
-        if col_tipo_nuevos:
-            miembros_nuevos = len(df_view[df_view[col_tipo_nuevos].astype(str).str.contains('MIEMBRO', na=False)])
-        k3.metric("Miembros Nuevos", miembros_nuevos)
-        
-        if has_finance and 'Primas' in df_view.columns:
-             total_primas = df_view['Primas'].sum()
-             k4.metric("Primas Estimadas", f"${total_primas:,.0f}")
-        else:
-             k4.metric("Finanzas", "No Data")
-
-        # Gráficos
-        row2_1, row2_2 = st.columns(2)
-        with row2_1:
-            if 'País_Detectado' in df_view.columns:
-                df_count = df_view['País_Detectado'].value_counts().reset_index()
-                df_count.columns = ['País', 'Cantidad']
-                fig_bar = px.bar(df_count, x='País', y='Cantidad', title="Nuevos por País", color='Cantidad')
-                st.plotly_chart(fig_bar, use_container_width=True)
-        
-        with row2_2:
-            if col_cat_nuevos:
-                fig_sun = px.sunburst(df_view, path=['País_Detectado', col_cat_nuevos], title="Jerarquía Regional")
-                st.plotly_chart(fig_sun, use_container_width=True)
-
-    # ==========================================================================
-    # TAB 2: DIRECTORIO & DESGLOSE (MEJORADO Y MOVIDO)
-    # ==========================================================================
-    with tab2:
-        st.header("📋 Directorio & Desglose de Afiliados")
-        st.markdown("Análisis detallado de la base actual de afiliados con filtros precisos.")
-
-        # 1. Identificación Inteligente de Columnas (Case Insensitive)
-        # Buscamos columnas que contengan 'PAIS' y ('OPERACION' o 'SEDE')
-        col_pais_operacion = find_column_fuzzy(df_dir.columns, ['PAIS', 'OPERACION'])
-        if not col_pais_operacion:
-            col_pais_operacion = find_column_fuzzy(df_dir.columns, ['PAIS', 'SEDE']) 
-        
-        # Buscamos Categoría ALSUM
-        col_cat_alsum = find_column_fuzzy(df_dir.columns, ['CATEGORIA', 'ALSUM'])
-        if not col_cat_alsum: # Fallback si no dice ALSUM explícitamente pero es categoría
-             col_cat_alsum = find_column_fuzzy(df_dir.columns, ['CATEGORIA'])
-        
-        # Buscamos Tipo (Miembro/Asociado) para los KPIs
-        col_tipo_afiliado = find_column_fuzzy(df_dir.columns, ['TIPO', 'AFILIADO'])
-        if not col_tipo_afiliado:
-            col_tipo_afiliado = find_column_fuzzy(df_dir.columns, ['CLASE'])
-
-        # 2. Configuración de Filtros
-        c_filter1, c_filter2, c_filter3 = st.columns(3)
-        
-        # Filtro País
-        opciones_pais = []
-        if col_pais_operacion:
-            opciones_pais = sorted(df_dir[col_pais_operacion].dropna().unique())
-            sel_pais_dir = c_filter1.multiselect("🏳️ País Sede / Operación", opciones_pais, default=opciones_pais)
-        else:
-            st.warning("No se detectó columna de País Sede en el Directorio.")
-            sel_pais_dir = []
-
-        # Filtro Categoría ALSUM
-        opciones_cat = []
-        if col_cat_alsum:
-            opciones_cat = sorted(df_dir[col_cat_alsum].dropna().unique())
-            sel_cat_dir = c_filter2.multiselect("🏷️ Categoría ALSUM", opciones_cat, default=opciones_cat)
-        else:
-            st.warning("No se detectó columna Categoría ALSUM.")
-            sel_cat_dir = []
+        if c_plan_cia and c_plan_tipo and c_plan_usd:
+            # Pivotear Plan
+            plan_pivot = df_plan.pivot_table(
+                index=c_plan_cia, columns=c_plan_tipo, values=c_plan_usd, aggfunc='sum', fill_value=0
+            ).reset_index()
+            # Renombrar columnas del pivot para facilitar merge
+            plan_pivot.columns = [str(c).strip() for c in plan_pivot.columns]
             
-        # Filtro Adicional (Tipo) si existe
-        opciones_tipo = []
-        sel_tipo_dir = []
-        if col_tipo_afiliado:
-            opciones_tipo = sorted(df_dir[col_tipo_afiliado].dropna().unique())
-            sel_tipo_dir = c_filter3.multiselect("📌 Tipo Afiliado", opciones_tipo, default=opciones_tipo)
+            # Normalizar nombres para cruce
+            plan_pivot['key_merge'] = normalize_text(plan_pivot[c_plan_cia])
+            if c_empresa_nuevos:
+                df_view['key_merge'] = normalize_text(df_view[c_empresa_nuevos])
+                
+                # Merge
+                # Buscamos columnas de Primas/Siniestros en el pivot
+                c_primas = find_col(plan_pivot, ['primas'])
+                c_siniestros = find_col(plan_pivot, ['siniestros'])
+                
+                cols_to_merge = ['key_merge']
+                if c_primas: cols_to_merge.append(c_primas)
+                if c_siniestros: cols_to_merge.append(c_siniestros)
+                
+                if len(cols_to_merge) > 1:
+                    df_view = pd.merge(df_view, plan_pivot[cols_to_merge], on='key_merge', how='left')
+                    has_finance = True
+                    # Renombrar para consistencia visual
+                    rename_fin = {}
+                    if c_primas: rename_fin[c_primas] = 'Primas'
+                    if c_siniestros: rename_fin[c_siniestros] = 'Siniestros'
+                    df_view = df_view.rename(columns=rename_fin)
 
-        # 3. Lógica de Filtrado del DataFrame
-        df_dir_filt = df_dir.copy()
+        # --- KPIS DASHBOARD ---
+        st.markdown("### 📊 Indicadores de Nuevas Incorporaciones")
+        k1, k2, k3, k4, k5 = st.columns(5)
         
-        if col_pais_operacion and sel_pais_dir:
-            df_dir_filt = df_dir_filt[df_dir_filt[col_pais_operacion].isin(sel_pais_dir)]
-            
-        if col_cat_alsum and sel_cat_dir:
-            df_dir_filt = df_dir_filt[df_dir_filt[col_cat_alsum].isin(sel_cat_dir)]
-            
-        if col_tipo_afiliado and sel_tipo_dir:
-            df_dir_filt = df_dir_filt[df_dir_filt[col_tipo_afiliado].isin(sel_tipo_dir)]
+        total_nuevos = len(df_view)
+        paises_activos = df_view[c_pais_nuevos].nunique() if c_pais_nuevos else 0
+        
+        miembros = 0
+        asociados = 0
+        if c_tipo_nuevos:
+            miembros = len(df_view[normalize_text(df_view[c_tipo_nuevos]).str.contains('miembro', na=False)])
+            asociados = len(df_view[normalize_text(df_view[c_tipo_nuevos]).str.contains('asociado', na=False)])
+        
+        total_primas = df_view['Primas'].sum() if has_finance and 'Primas' in df_view.columns else 0
+        
+        k1.metric("Nuevas Empresas", total_nuevos, delta="2025 Activo")
+        k2.metric("Países Detectados", paises_activos)
+        k3.metric("Miembros (Core)", miembros)
+        k4.metric("Asociados", asociados)
+        if has_finance:
+            k5.metric("Primas Estimadas", f"${total_primas:,.0f}")
+        else:
+            k5.metric("Finanzas", "No Cruzado")
 
         st.markdown("---")
-
-        # 4. KPIs Dinámicos (Solicitud Específica)
-        # Calculamos los conteos basados en la data ya filtrada
-        total_empresas = len(df_dir_filt)
         
-        total_miembros = 0
-        total_asociados = 0
-        
-        if col_tipo_afiliado:
-            # Buscamos strings que contengan 'MIEMBRO' o 'ASOCIADO' (ya está todo en mayúsculas por normalización)
-            total_miembros = df_dir_filt[col_tipo_afiliado].str.contains('MIEMBRO', na=False).sum()
-            total_asociados = df_dir_filt[col_tipo_afiliado].str.contains('ASOCIADO', na=False).sum()
-
-        st.markdown("### 📊 Indicadores del Desglose")
-        kp1, kp2, kp3, kp4 = st.columns(4)
-        
-        kp1.metric("Total Empresas Listadas", total_empresas)
-        kp2.metric("Miembros (Core)", int(total_miembros))
-        kp3.metric("Asociados", int(total_asociados))
-        
-        # % de Representación del filtro sobre el total global
-        pct_global = (total_empresas / len(df_dir) * 100) if len(df_dir) > 0 else 0
-        kp4.metric("% del Directorio Total", f"{pct_global:.1f}%")
-
-        # 5. Visualización Gráfica y Tabla
-        col_viz, col_data = st.columns([1, 2])
-        
-        with col_viz:
-            st.markdown("#### Distribución Visual")
-            if col_cat_alsum:
-                df_pie = df_dir_filt[col_cat_alsum].value_counts().reset_index()
-                df_pie.columns = ['Categoría', 'Cantidad']
-                fig_pie = px.pie(df_pie, values='Cantidad', names='Categoría', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
-                st.plotly_chart(fig_pie, use_container_width=True)
-            elif col_pais_operacion:
-                df_bar = df_dir_filt[col_pais_operacion].value_counts().reset_index().head(10)
-                df_bar.columns = ['País', 'Cantidad']
-                fig_bar = px.bar(df_bar, x='Cantidad', y='País', orientation='h')
-                st.plotly_chart(fig_bar, use_container_width=True)
+        # --- GRÁFICOS ---
+        row2_1, row2_2 = st.columns(2)
+        with row2_1:
+            if c_pais_nuevos and c_tipo_nuevos:
+                st.markdown("**Distribución por País y Tipo**")
+                df_stack = df_view.groupby([c_pais_nuevos, c_tipo_nuevos]).size().reset_index(name='Conteo')
+                fig_stack = px.bar(
+                    df_stack, x=c_pais_nuevos, y='Conteo', color=c_tipo_nuevos,
+                    barmode='stack', template="plotly_white"
+                )
+                st.plotly_chart(fig_stack, use_container_width=True)
                 
-        with col_data:
-            st.markdown("#### Detalle de Empresas")
-            st.dataframe(df_dir_filt, use_container_width=True, height=400)
+        with row2_2:
+            if c_pais_nuevos and c_cat_nuevos:
+                st.markdown("**Jerarquía: País -> Categoría**")
+                fig_sun = px.sunburst(
+                    df_view, path=[c_pais_nuevos, c_cat_nuevos], 
+                    title="Radiografía del Mercado", color=c_pais_nuevos
+                )
+                st.plotly_chart(fig_sun, use_container_width=True)
+
+        with st.expander("📋 Ver Datos Filtrados"):
+            st.dataframe(df_view.drop(columns=['key_merge'], errors='ignore'), use_container_width=True)
+
+    # ==========================================================================
+    # TAB 2: DIRECTORIO & DESGLOSE (MEJORADO FULL)
+    # ==========================================================================
+    with tab2:
+        st.header("📋 Directorio de Afiliados: Inteligencia & KPIs")
+        
+        # 1. Identificar Columnas Clave en Directorio (Robustez)
+        
+        # A) País
+        c_dir_pais_op = find_col(df_dir, ['país operación', 'pais operacion', 'país op', 'operación'])
+        
+        # B) Categoría ALSUM (Negocio: Aseguradora, Broker...)
+        # Buscamos explícitamente "Categoría ALSUM" o "Tipo de Compañía"
+        c_dir_cat_alsum = find_col(df_dir, ['categoría alsum', 'categoria alsum', 'tipo de compañía'])
+        
+        # C) Categoría (Afiliación: Miembro vs Asociado) - SOLICITUD ESPECÍFICA
+        # Buscamos estrictamente "categoria" o "categoría" primero, para evitar conflicto con "Categoría ALSUM" si es posible,
+        # find_col buscará exacto primero.
+        c_dir_membresia = find_col(df_dir, ['categoria', 'categoría'])
+        
+        # Fallback: Si 'c_dir_membresia' terminó siendo el mismo que 'c_dir_cat_alsum', intentamos buscar algo más.
+        if c_dir_membresia == c_dir_cat_alsum:
+             # Si son iguales, es posible que el excel solo tenga una columna "Categoría".
+             # Pero si existen dos, intentamos desambiguar buscando "Tipo de Afiliado" para la membresía.
+             c_alternativo = find_col(df_dir, ['tipo de afiliado', 'tipo afiliado'])
+             if c_alternativo:
+                 c_dir_membresia = c_alternativo
+
+        # 2. Configuración de Filtros (AHORA SON 3)
+        with st.container():
+            st.markdown("#### 🔍 Filtros Avanzados")
+            col_filtro_1, col_filtro_2, col_filtro_3 = st.columns(3)
+            
+            # Filtro 1: País Operación
+            opciones_pais = []
+            sel_pais_op = []
+            if c_dir_pais_op:
+                opciones_pais = sorted(df_dir[c_dir_pais_op].dropna().astype(str).unique())
+                sel_pais_op = col_filtro_1.multiselect("🏳️ País de Operación", opciones_pais, default=opciones_pais, key="f_dir_pais")
+            else:
+                col_filtro_1.warning("Falta col. País")
+
+            # Filtro 2: Categoría ALSUM (Rubro de Negocio)
+            opciones_cat = []
+            sel_cat_alsum = []
+            if c_dir_cat_alsum:
+                opciones_cat = sorted(df_dir[c_dir_cat_alsum].dropna().astype(str).unique())
+                sel_cat_alsum = col_filtro_2.multiselect("🏷️ Categoría ALSUM (Rubro)", opciones_cat, default=opciones_cat, key="f_dir_cat")
+            else:
+                col_filtro_2.warning("Falta col. Categoría ALSUM")
+                
+            # Filtro 3: Tipo Afiliado (Miembro vs Asociado) -> Usando col "Categoría"
+            opciones_membresia = []
+            sel_membresia = []
+            if c_dir_membresia:
+                opciones_membresia = sorted(df_dir[c_dir_membresia].dropna().astype(str).unique())
+                sel_membresia = col_filtro_3.multiselect("🤝 Categoría (Miembro/Asociado)", opciones_membresia, default=opciones_membresia, key="f_dir_mem")
+            else:
+                col_filtro_3.info("Columna 'Categoría' (Miembro/Asociado) no encontrada")
+
+        # 3. Filtrado de Datos
+        df_dir_filt = df_dir.copy()
+        
+        if c_dir_pais_op and sel_pais_op:
+            df_dir_filt = df_dir_filt[df_dir_filt[c_dir_pais_op].isin(sel_pais_op)]
+            
+        if c_dir_cat_alsum and sel_cat_alsum:
+            df_dir_filt = df_dir_filt[df_dir_filt[c_dir_cat_alsum].isin(sel_cat_alsum)]
+            
+        if c_dir_membresia and sel_membresia:
+            df_dir_filt = df_dir_filt[df_dir_filt[c_dir_membresia].isin(sel_membresia)]
+
+        st.divider()
+
+        # 4. Cálculo de KPIs Dinámicos
+        kpi_d1, kpi_d2, kpi_d3, kpi_d4 = st.columns(4)
+        
+        count_total = len(df_dir_filt)
+        
+        # Conteo inteligente Miembros vs Asociados usando la columna detectada
+        count_miembros = 0
+        count_asociados = 0
+        col_para_conteo = c_dir_membresia if c_dir_membresia else c_dir_cat_alsum
+        
+        if col_para_conteo:
+            series_norm = normalize_text(df_dir_filt[col_para_conteo])
+            count_miembros = len(df_dir_filt[series_norm.str.contains('miembro', na=False)])
+            count_asociados = len(df_dir_filt[series_norm.str.contains('asociado', na=False)])
+        
+        paises_unicos_dir = df_dir_filt[c_dir_pais_op].nunique() if c_dir_pais_op else 0
+
+        kpi_d1.metric("Total Empresas", count_total)
+        kpi_d2.metric("Países Operación", paises_unicos_dir)
+        kpi_d3.metric("Miembros", count_miembros)
+        kpi_d4.metric("Asociados", count_asociados)
+
+        st.divider()
+
+        # 5. Visualizaciones de Desglose
+        col_viz1, col_viz2 = st.columns(2)
+        
+        with col_viz1:
+            # --- PARTICIPACIÓN POR PAÍS (SOLICITADO) ---
+            if c_dir_pais_op:
+                st.markdown("### 🌎 Participación por País")
+                conteo_pais_pie = df_dir_filt[c_dir_pais_op].value_counts().reset_index()
+                conteo_pais_pie.columns = ['País', 'Cantidad']
+                
+                # Donut Chart
+                fig_pie_pais = px.pie(
+                    conteo_pais_pie, 
+                    values='Cantidad', 
+                    names='País', 
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.qualitative.Prism,
+                    title="Market Share Geográfico (Selección Actual)"
+                )
+                fig_pie_pais.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_pie_pais, use_container_width=True)
+            else:
+                st.warning("No hay datos de País para graficar.")
+        
+        with col_viz2:
+            # --- CATEGORÍAS ALSUM (RUBRO) ---
+            if c_dir_cat_alsum:
+                st.markdown("### 🏢 Top Categorías de Negocio")
+                conteo_cat = df_dir_filt[c_dir_cat_alsum].value_counts().nlargest(10).reset_index()
+                conteo_cat.columns = ['Categoría', 'Cantidad']
+                fig_bar_cat = px.bar(
+                    conteo_cat, 
+                    x='Cantidad', 
+                    y='Categoría', 
+                    orientation='h', 
+                    text='Cantidad',
+                    color='Cantidad',
+                    color_continuous_scale="Blues"
+                )
+                fig_bar_cat.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_bar_cat, use_container_width=True)
+            else:
+                st.warning("No hay datos de Categoría para graficar.")
+
+        # 6. Tabla de Datos
+        st.subheader("Detalle de Empresas Filtradas")
+        st.dataframe(df_dir_filt, use_container_width=True)
 
     # ==========================================================================
     # TAB 3: DATA WAREHOUSE
     # ==========================================================================
     with tab3:
         st.subheader("Auditoría de Datos")
-        v = st.radio("Ver Dataset:", ["Nuevos Procesados", "Directorio Completo", "Plan Estratégico"], horizontal=True)
+        v = st.radio("Ver Dataset:", ["Nuevos Procesados", "Directorio Completo", "Plan 2026"], horizontal=True)
         if v == "Nuevos Procesados": st.dataframe(df_nuevos, use_container_width=True)
         elif v == "Directorio Completo": st.dataframe(df_dir, use_container_width=True)
         else: st.dataframe(df_plan, use_container_width=True)
 
     # ==========================================================================
-    # TAB 4: COMPARATIVO PAÍS & KPIs (MANTENIDO)
+    # TAB 4: COMPARATIVO Y NO AFILIADOS
     # ==========================================================================
     with tab4:
         st.header("📊 Comparativo País & KPIs")
         c1, c2, c3 = st.columns(3)
         
-        # Calcular No Afiliados desde el Plan
+        # Datos para comparar
+        nuevos_por_pais = pd.DataFrame()
+        if 'País_Detectado' in df_nuevos.columns:
+            nuevos_por_pais = df_nuevos['País_Detectado'].value_counts().reset_index()
+            nuevos_por_pais.columns = ['País', 'Nuevos Afiliados']
+
         no_afiliados = pd.DataFrame()
-        col_afiliado_plan = find_column_fuzzy(df_plan.columns, ['AFILIADO'])
-        col_pais_plan = find_column_fuzzy(df_plan.columns, ['PAIS'])
+        no_afiliados_por_pais = pd.DataFrame()
         
-        if col_afiliado_plan and col_pais_plan:
-            no_afiliados = df_plan[df_plan[col_afiliado_plan].astype(str) == 'NO AFILIADO']
-            no_afiliados_por_pais = no_afiliados[col_pais_plan].value_counts().reset_index()
+        c_plan_afiliado = find_col(df_plan, ['afiliado', 'estado'])
+        c_plan_pais = find_col(df_plan, ['país', 'pais'])
+        
+        if c_plan_afiliado and c_plan_pais:
+            no_afiliados = df_plan[normalize_text(df_plan[c_plan_afiliado]) == 'no afiliado']
+            no_afiliados_por_pais = no_afiliados[c_plan_pais].value_counts().reset_index()
             no_afiliados_por_pais.columns = ['País', 'No Afiliados']
-        else:
-            no_afiliados_por_pais = pd.DataFrame()
+
+        # Métricas
+        total_primas_plan = 0
+        c_plan_primas = find_col(df_plan, ['primas', 'usd'])
+        if c_plan_primas:
+            total_primas_plan = df_plan[c_plan_primas].sum()
 
         with c1:
-            total_primas_plan = df_plan['Primas'].sum() if 'Primas' in df_plan.columns else 0
             st.metric("Primas Totales Plan", f"${total_primas_plan:,.0f}")
         with c2:
-            st.metric("Total Nuevos Detectados", len(df_nuevos))
+            st.metric("Total Nuevos (Global)", len(df_nuevos))
+            if not nuevos_por_pais.empty: st.dataframe(nuevos_por_pais, use_container_width=True, height=150)
         with c3:
-            st.metric("Oportunidades (No Afiliados)", len(no_afiliados))
+            st.metric("Oportunidad (No Afiliados)", len(no_afiliados))
+            if not no_afiliados_por_pais.empty: st.dataframe(no_afiliados_por_pais, use_container_width=True, height=150)
 
+        st.divider()
         st.markdown("### 🌍 Mapa de Oportunidad (No Afiliados)")
         if not no_afiliados_por_pais.empty:
             fig_map = px.choropleth(
                 no_afiliados_por_pais, locations='País', locationmode='country names',
                 color='No Afiliados', color_continuous_scale="Reds",
-                title="Concentración de No Afiliados por País"
+                title="Concentración Geográfica de No Afiliados"
             )
             st.plotly_chart(fig_map, use_container_width=True)
-            
-            st.markdown("#### Listado de Oportunidades")
-            st.dataframe(no_afiliados, use_container_width=True)
+
+        st.markdown("### 🔎 Listado de No Afiliados")
+        st.dataframe(no_afiliados, use_container_width=True)
 
     # ==========================================================================
     # TAB 5: LABORATORIO IA
     # ==========================================================================
     with tab5:
         st.header("🤖 Laboratorio de Inteligencia Artificial")
-        st.markdown("Analiza los datos cargados usando GPT-4o-mini.")
+        st.markdown("Analiza tus tablas de datos usando GPT-4o-mini.")
         
         c_ia1, c_ia2 = st.columns([1, 2])
         with c_ia1:
-            dataset_opt = st.selectbox("Fuente de Datos", ["Directorio (Filtrado)", "Nuevos Afiliados", "No Afiliados"])
-            user_prompt = st.text_area("Consulta:", "Dame un análisis FODA y sugerencias estratégicas.")
-            api_key = utils.get_api_key() # Asegúrate que utils tenga esta función
-            btn_ia = st.button("✨ Generar Análisis")
+            st.info("Configuración del Análisis")
+            dataset_opt = st.selectbox("Fuente de Datos", ["Nuevos Afiliados", "Directorio Filtrado", "No Afiliados"])
+            user_prompt = st.text_area("Instrucción para la IA:", "Dame 3 estrategias clave basadas en estos datos.")
+            btn_ia = st.button("✨ Generar Insights", type="primary")
         
         with c_ia2:
             if btn_ia:
-                if not api_key:
-                    st.error("❌ Falta la API Key.")
-                else:
-                    contexto = ""
-                    if dataset_opt == "Directorio (Filtrado)":
-                        contexto = df_dir_filt.head(40).to_string()
-                    elif dataset_opt == "Nuevos Afiliados":
-                        contexto = df_nuevos.describe(include='all').to_string()
-                    elif dataset_opt == "No Afiliados":
-                        contexto = no_afiliados.head(40).to_string()
-                    
-                    with st.spinner("Analizando..."):
-                        res = consultar_gpt4(api_key, user_prompt, contexto)
-                        st.markdown(res)
+                contexto = ""
+                if dataset_opt == "Nuevos Afiliados":
+                    contexto = df_nuevos.describe(include='all').to_string() + "\n\n" + df_nuevos.head(20).to_string()
+                elif dataset_opt == "Directorio Filtrado":
+                    # Usamos df_dir por simplicidad de scope local, idealmente usar el filtrado
+                    contexto = df_dir.head(50).to_string()
+                elif dataset_opt == "No Afiliados":
+                    if 'no_afiliados' in locals() and not no_afiliados.empty:
+                        contexto = no_afiliados.head(30).to_string()
+                    else:
+                        contexto = "No hay datos de No Afiliados disponibles."
+                
+                with st.spinner("Analizando..."):
+                    resultado = consultar_gpt4(api_key, user_prompt, contexto)
+                    st.markdown(resultado)
 
+    # ==========================================================================
     # BOTÓN DE DESCARGA GLOBAL
+    # ==========================================================================
     with col_download:
-        no_afiliados_dl = no_afiliados if not no_afiliados.empty else pd.DataFrame()
-        excel_data = generate_excel_download(df_nuevos, extra_sheets={'No_Afiliados': no_afiliados_dl})
+        # Preparamos hojas extra
+        extra_sheets = {}
+        if 'no_afiliados' in locals():
+            extra_sheets['No_Afiliados'] = no_afiliados
+        
+        excel_data = generate_excel_download(df_nuevos, extra_sheets=extra_sheets)
+        
         st.download_button(
-            label="📥 Descargar Reporte Completo (.xlsx)",
+            label="📥 Descargar Reporte Maestro (.xlsx)",
             data=excel_data,
-            file_name="ALSUM_Master_Report.xlsx",
+            file_name="ALSUM_Reporte_Estrategico_2026.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary"
         )
