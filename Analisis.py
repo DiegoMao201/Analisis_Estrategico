@@ -234,6 +234,7 @@ with tab1:
         'Resultado Técnico': 'sum'
     }).reset_index()
     pivot_comp['Siniestralidad'] = (pivot_comp['Siniestros'] / pivot_comp['Primas'] * 100).fillna(0)
+    pivot_comp['Compañía'] = pivot_comp['Compañía'].astype(str).str.upper().str.strip()
 
     # Formateo dinámico de columnas numéricas
     st.dataframe(
@@ -242,7 +243,7 @@ with tab1:
                 'Primas': '${:,.0f}',
                 'Siniestros': '${:,.0f}',
                 'Resultado Técnico': '${:,.0f}',
-                'Siniestralidad': '{:.1f}%'
+                'Siniestralidad': '{:,.0f}%'
             }),
         use_container_width=True,
         hide_index=True
