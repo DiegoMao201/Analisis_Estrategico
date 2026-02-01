@@ -307,8 +307,19 @@ def main():
             )
             st.plotly_chart(fig_scat, use_container_width=True)
 
+        # Elimina columnas con nombre 'Unnamed_*'
+        cols_to_drop = [c for c in df_view.columns if c.lower().startswith('unnamed')]
+        df_view = df_view.drop(columns=cols_to_drop)
+
+        # Elimina columnas completamente vacías
+        df_view = df_view.dropna(axis=1, how='all')
+
+        # Mostrar tabla maestra filtrada y limpia
         with st.expander("📋 Ver Tabla Maestra de Datos Filtrados"):
-            st.dataframe(df_view.style.background_gradient(subset=['Primas'], cmap='Greens') if has_finance else df_view, use_container_width=True)
+            st.dataframe(
+                df_view.style.background_gradient(subset=['Primas'], cmap='Greens') if has_finance else df_view,
+                use_container_width=True
+            )
 
     # ==========================================================================
     # TAB 2: DEEP ANALYTICS (NUEVA PESTAÑA POTENCIADA)
