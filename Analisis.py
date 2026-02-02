@@ -270,7 +270,13 @@ with tab2:
     
     st.markdown("#### Detalle Anual por Ramo")
     pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', valor=metrica_focus)
-    st.dataframe(pivot_ramo, use_container_width=True)
+    st.dataframe(
+    pivot_ramo.style.format({
+        col: '${:,.0f}' if 'TOTAL' in col or 'Primas' in col or 'Siniestros' in col else '{:,.0f}%'
+        for col in pivot_ramo.columns if col != 'Ramo'
+    }),
+    use_container_width=True
+    )
 
     # --- Participación de Afiliados vs No Afiliados ---
     st.markdown("### 🏅 Participación de Afiliados vs No Afiliados en el Mercado Potencial")
@@ -406,13 +412,18 @@ with tab4:
         st.markdown("**🚨 Top Riesgos (Siniestros Altos)**")
         st.dataframe(
             comp_scatter.sort_values("Siniestros", ascending=False).head(10)
-            .style.format({'Siniestros': '${:,.0f}'}),
+            .style.format({'Siniestros': '${:,.0f}', 'Primas': '${:,.0f}'}),
             hide_index=True,
             use_container_width=True
         )
         
     st.markdown("### Tabla de Datos Completa")
-    st.dataframe(df_filtrado, use_container_width=True)
+    st.dataframe(
+    df_filtrado.style.format({
+        col: '${:,.0f}' for col in df_filtrado.select_dtypes(include='number').columns
+    }),
+    use_container_width=True
+)
 
 st.markdown("### 🌎 Empresas por País")
 
@@ -420,7 +431,8 @@ empresas_por_pais = df_filtrado.groupby('País')['Compañía'].nunique().reset_i
 empresas_por_pais.columns = ['País', 'Empresas']
 
 st.dataframe(
-    empresas_por_pais.sort_values('Empresas', ascending=False),
+    empresas_por_pais.sort_values('Empresas', ascending=False)
+    .style.format({'Empresas': '{:,.0f}'}),
     use_container_width=True,
     hide_index=True
 )
