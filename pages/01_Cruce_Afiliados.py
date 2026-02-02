@@ -215,8 +215,12 @@ def main():
             st.success("API Key Detectada")
         else:
             st.warning("API Key No Detectada")
-            
-        st.info("Sistema cargado y optimizado.")
+    st.info("Sistema cargado y optimizado.")
+
+    # --- BOTÓN PARA FORZAR RECARGA DE DATOS ---
+    if st.button("🔄 Recargar datos (forzar actualización)"):
+        st.cache_data.clear()
+        st.experimental_rerun()
 
     col_logo, col_title, col_download = st.columns([1, 4, 2])
     with col_title:
