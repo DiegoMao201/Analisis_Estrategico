@@ -119,11 +119,9 @@ if 'AFILIADO' in df_final.columns:
     elif filtro_afiliado == "No afiliados":
         df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']
 
-# Filtro RAMO
+# Filtro RAMO (ahora muestra todos los ramos, incluyendo "No reporta")
 if 'Ramo' in df_final.columns:
-    # Solo mostrar los ramos de interés
-    ramos_estudio = ["Carga", "Cascos", "RC"]
-    ramos_disp = [r for r in ramos_estudio if r in df_final['Ramo'].unique()]
+    ramos_disp = sorted(df_final['Ramo'].dropna().unique())
     filtro_ramos = st.sidebar.multiselect("📦 Ramo / Producto", ramos_disp, default=ramos_disp)
     if filtro_ramos:
         df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
