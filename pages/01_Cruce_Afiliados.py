@@ -443,7 +443,12 @@ def main():
             st.info("No hay datos de Categoría ALSUM para graficar.")
 
         with st.expander("📋 Ver Datos Filtrados"):
-            st.dataframe(df_view.drop(columns=['key_merge', 'empresa_norm'], errors='ignore'), use_container_width=True)
+            # Elimina columnas Unnamed antes de mostrar
+            cols_to_drop = [col for col in df_view.columns if str(col).lower().startswith('unnamed')]
+            st.dataframe(
+                df_view.drop(columns=cols_to_drop + ['key_merge', 'empresa_norm'], errors='ignore'),
+                use_container_width=True
+            )
 
     # ==========================================================================
     # TAB 2: DIRECTORIO & DESGLOSE (MEJORADO FULL)
