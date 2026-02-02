@@ -376,16 +376,18 @@ def main():
         # --- KPIS DASHBOARD ---
         st.markdown("### 📊 Indicadores de Nuevas Incorporaciones")
         k1, k2, k3, k4, k5, k6 = st.columns(6)
-        
+
         total_nuevos = len(df_view)
         paises_activos = df_view[c_pais_nuevos].nunique() if c_pais_nuevos else 0
-        
+
+        # NUEVO: Miembros y Asociados usando la columna CATEGORIA
         miembros = 0
         asociados = 0
-        if c_tipo_nuevos:
-            miembros = len(df_view[normalize_text(df_view[c_tipo_nuevos]).str.contains('miembro', na=False)])
-            asociados = len(df_view[normalize_text(df_view[c_tipo_nuevos]).str.contains('asociado', na=False)])
-        
+        if c_cat_nuevos:
+            cat_norm = normalize_text(df_view[c_cat_nuevos])
+            miembros = (cat_norm == "miembro").sum()
+            asociados = (cat_norm == "asociado").sum()
+
         total_primas = df_view['Primas'].sum() if has_finance and 'Primas' in df_view.columns else 0
 
         # NUEVO: KPI Categoría ALSUM
@@ -399,7 +401,6 @@ def main():
             k5.metric("Primas Estimadas", f"${total_primas:,.0f}")
         else:
             k5.metric("Finanzas", "No Cruzado")
-        # NUEVO KPI
         if c_cat_alsum_nuevos:
             k6.metric("Categorías ALSUM (Rubro)", total_cat_alsum)
         else:
@@ -448,10 +449,12 @@ def main():
             st.info("No hay datos de Categoría ALSUM para graficar.")
 
         with st.expander("📋 Ver Datos Filtrados"):
-            # Elimina columnas Unnamed antes de mostrar
-            cols_to_drop = [col for col in df_view.columns if str(col).lower().startswith('unnamed')]
+            # Elimina columnas Unnamed y deja solo "Empresa" y columnas del directorio (sin empresa_norm)
+            cols_to_drop = [col for col in df_view.columns if str(col).lower().startswith('unnamed') or col == 'empresa_norm']
+            # Solo deja la columna "Empresa" y las columnas del directorio (excluye duplicados de empresa)
+            cols_final = [col for col in df_view.columns if col.lower() == "empresa" or (col not in cols_to_drop and col.lower() != "empresa_norm")]
             st.dataframe(
-                df_view.drop(columns=cols_to_drop, errors='ignore'),
+                df_view[cols_final],
                 use_container_width=True
             )
 
