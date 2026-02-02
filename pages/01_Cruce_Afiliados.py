@@ -263,8 +263,34 @@ def main():
         c_cat_nuevos = find_col(df_nuevos, ['categoria', 'tipo compañía', 'tipo compañia'])
         c_tipo_nuevos = find_col(df_nuevos, ['tipo de afiliado', 'tipo afiliado', 'tipo'])
         c_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
-        # NUEVO: Detectar Categoría ALSUM (rubro de negocio)
         c_cat_alsum_nuevos = find_col(df_nuevos, ['categoría alsum', 'categoria alsum', 'tipo de compañía'])
+
+        # --- NUEVO: MERGE CON DIRECTORIO PARA ENRIQUECER INFORMACIÓN ---
+        # Detectar columna empresa en directorio
+        c_empresa_dir = find_col(df_dir, ['empresa', 'compañía', 'compañia'])
+        # Columnas a traer del directorio
+        cols_dir_extra = [
+            'PAÍS SEDE OPERACIÓN', 'PAÍSES DÓNDE TIENE PRESENCIA', 'VALOR DE LA MEMBRESÍA',
+            'TIPO DE EMPRESA', 'CATEGORÍA ALSUM', 'CATEGORIA'
+        ]
+        # Buscar nombres reales de esas columnas en df_dir
+        cols_dir_extra_real = [find_col(df_dir, [col]) for col in cols_dir_extra]
+        # Filtrar solo las que existen
+        cols_dir_extra_real = [col for col in cols_dir_extra_real if col]
+
+        # Hacer merge si existen las columnas clave
+        if c_empresa_nuevos and c_empresa_dir:
+            # Normalizar para merge robusto
+            df_nuevos['empresa_norm'] = df_nuevos[c_empresa_nuevos].str.upper().str.strip()
+            df_dir['empresa_norm'] = df_dir[c_empresa_dir].str.upper().str.strip()
+            # Hacemos el merge
+            df_nuevos = pd.merge(
+                df_nuevos,
+                df_dir[['empresa_norm'] + cols_dir_extra_real],
+                on='empresa_norm',
+                how='left',
+                suffixes=('', '_dir')
+            )
 
         # --- FILTROS ---
         with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
@@ -376,9 +402,10 @@ def main():
 
         st.markdown("---")
 
-        # --- GRÁFICOS ---
-        row2_1, row2_2, row2_3 = st.columns(3)
-        with row2_1:
+        # --- GRÁFICOS REORGANIZADOS ---
+        # Dos columnas principales para las gráficas más importantes
+        col_g1, col_g2 = st.columns([2, 2])
+        with col_g1:
             if c_pais_nuevos and c_tipo_nuevos:
                 st.markdown("**Distribución por País y Tipo**")
                 df_stack = df_view.groupby([c_pais_nuevos, c_tipo_nuevos]).size().reset_index(name='Conteo')
@@ -387,8 +414,7 @@ def main():
                     barmode='stack', template="plotly_white"
                 )
                 st.plotly_chart(fig_stack, use_container_width=True)
-                
-        with row2_2:
+        with col_g2:
             if c_pais_nuevos and c_cat_nuevos:
                 st.markdown("**Jerarquía: País -> Categoría**")
                 fig_sun = px.sunburst(
@@ -397,27 +423,27 @@ def main():
                 )
                 st.plotly_chart(fig_sun, use_container_width=True)
 
-        # NUEVO: Gráfico Categoría ALSUM
-        with row2_3:
-            if c_cat_alsum_nuevos:
-                st.markdown("**Nuevos por Categoría ALSUM (Rubro)**")
-                conteo_alsum = df_view[c_cat_alsum_nuevos].value_counts().reset_index()
-                conteo_alsum.columns = ['Categoría ALSUM', 'Nuevos']
-                fig_alsum = px.bar(
-                    conteo_alsum, 
-                    x='Categoría ALSUM', 
-                    y='Nuevos', 
-                    color='Nuevos',
-                    color_continuous_scale="Blues",
-                    title="Nuevos por Rubro de Negocio"
-                )
-                fig_alsum.update_layout(xaxis={'categoryorder':'total descending'})
-                st.plotly_chart(fig_alsum, use_container_width=True)
-            else:
-                st.info("No hay datos de Categoría ALSUM para graficar.")
+        # Gráfico de Categoría ALSUM ocupa todo el ancho abajo
+        st.markdown(" ")
+        if c_cat_alsum_nuevos:
+            st.markdown("**Nuevos por Categoría ALSUM (Rubro)**")
+            conteo_alsum = df_view[c_cat_alsum_nuevos].value_counts().reset_index()
+            conteo_alsum.columns = ['Categoría ALSUM', 'Nuevos']
+            fig_alsum = px.bar(
+                conteo_alsum, 
+                x='Categoría ALSUM', 
+                y='Nuevos', 
+                color='Nuevos',
+                color_continuous_scale="Blues",
+                title="Nuevos por Rubro de Negocio"
+            )
+            fig_alsum.update_layout(xaxis={'categoryorder':'total descending'})
+            st.plotly_chart(fig_alsum, use_container_width=True)
+        else:
+            st.info("No hay datos de Categoría ALSUM para graficar.")
 
         with st.expander("📋 Ver Datos Filtrados"):
-            st.dataframe(df_view.drop(columns=['key_merge'], errors='ignore'), use_container_width=True)
+            st.dataframe(df_view.drop(columns=['key_merge', 'empresa_norm'], errors='ignore'), use_container_width=True)
 
     # ==========================================================================
     # TAB 2: DIRECTORIO & DESGLOSE (MEJORADO FULL)
