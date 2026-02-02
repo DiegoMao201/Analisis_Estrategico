@@ -270,10 +270,10 @@ def main():
         # 3. Selecciona solo las columnas relevantes del directorio
         cols_dir_extra = [
             c_empresa_dir,
-            find_col(df_dir, ['país sede operación', 'pais sede operacion']),
+            find_col(df_dir, ['país sede operación', 'pais sede operacion', 'país', 'pais']),
             find_col(df_dir, ['países dónde tiene presencia', 'paises donde tiene presencia']),
             find_col(df_dir, ['valor de la membresía', 'valor de la membresia']),
-            find_col(df_dir, ['tipo de empresa']),
+            find_col(df_dir, ['tipo de empresa', 'tipo de afiliado', 'tipo afiliado']),
             find_col(df_dir, ['categoría alsum', 'categoria alsum']),
             find_col(df_dir, ['categoria'])
         ]
@@ -292,7 +292,7 @@ def main():
         df_nuevos_final = df_nuevos_final.drop(columns=['empresa_norm'], errors='ignore')
 
         # Definir columnas clave en el DataFrame enriquecido
-        c_pais_nuevos = find_col(df_nuevos_final, ['país', 'pais'])
+        c_pais_nuevos = find_col(df_nuevos_final, ['país', 'pais', 'país sede operación', 'pais sede operacion'])
         c_cat_nuevos = find_col(df_nuevos_final, ['categoria'])
         c_tipo_nuevos = find_col(df_nuevos_final, ['tipo de empresa', 'tipo de afiliado', 'tipo afiliado'])
         c_cat_alsum_nuevos = find_col(df_nuevos_final, ['categoría alsum', 'categoria alsum'])
@@ -303,23 +303,23 @@ def main():
             
             sel_paises = []
             if c_pais_nuevos:
-                paises_disp = sorted(df_nuevos[c_pais_nuevos].dropna().astype(str).unique())
+                paises_disp = sorted(df_nuevos_final[c_pais_nuevos].dropna().astype(str).unique())
                 sel_paises = col_f1.multiselect("Filtrar por País", paises_disp, default=paises_disp)
             
             sel_cat = []
             if c_cat_nuevos:
-                cats_disp = sorted(df_nuevos[c_cat_nuevos].dropna().astype(str).unique())
+                cats_disp = sorted(df_nuevos_final[c_cat_nuevos].dropna().astype(str).unique())
                 sel_cat = col_f2.multiselect("Filtrar por Categoría", cats_disp, default=cats_disp)
             
             sel_tipo = []
             if c_tipo_nuevos:
-                tipos_disp = sorted(df_nuevos[c_tipo_nuevos].dropna().astype(str).unique())
+                tipos_disp = sorted(df_nuevos_final[c_tipo_nuevos].dropna().astype(str).unique())
                 sel_tipo = col_f3.multiselect("Filtrar por Tipo Afiliado", tipos_disp, default=tipos_disp)
 
             # NUEVO: Filtro Categoría ALSUM
             sel_cat_alsum = []
             if c_cat_alsum_nuevos:
-                cats_alsum_disp = sorted(df_nuevos[c_cat_alsum_nuevos].dropna().astype(str).unique())
+                cats_alsum_disp = sorted(df_nuevos_final[c_cat_alsum_nuevos].dropna().astype(str).unique())
                 sel_cat_alsum = col_f4.multiselect("Filtrar por Categoría ALSUM (Rubro)", cats_alsum_disp, default=cats_alsum_disp)
             else:
                 col_f4.info("Columna 'Categoría ALSUM' no encontrada")
