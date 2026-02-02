@@ -263,10 +263,12 @@ def main():
         c_cat_nuevos = find_col(df_nuevos, ['categoria', 'tipo compañía', 'tipo compañia'])
         c_tipo_nuevos = find_col(df_nuevos, ['tipo de afiliado', 'tipo afiliado', 'tipo'])
         c_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
+        # NUEVO: Detectar Categoría ALSUM (rubro de negocio)
+        c_cat_alsum_nuevos = find_col(df_nuevos, ['categoría alsum', 'categoria alsum', 'tipo de compañía'])
 
         # --- FILTROS ---
         with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
-            col_f1, col_f2, col_f3 = st.columns(3)
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
             sel_paises = []
             if c_pais_nuevos:
@@ -283,6 +285,14 @@ def main():
                 tipos_disp = sorted(df_nuevos[c_tipo_nuevos].dropna().astype(str).unique())
                 sel_tipo = col_f3.multiselect("Filtrar por Tipo Afiliado", tipos_disp, default=tipos_disp)
 
+            # NUEVO: Filtro Categoría ALSUM
+            sel_cat_alsum = []
+            if c_cat_alsum_nuevos:
+                cats_alsum_disp = sorted(df_nuevos[c_cat_alsum_nuevos].dropna().astype(str).unique())
+                sel_cat_alsum = col_f4.multiselect("Filtrar por Categoría ALSUM (Rubro)", cats_alsum_disp, default=cats_alsum_disp)
+            else:
+                col_f4.info("Columna 'Categoría ALSUM' no encontrada")
+
         # --- APLICACIÓN DE FILTROS ---
         df_view = df_nuevos.copy()
         if c_pais_nuevos and sel_paises:
@@ -291,6 +301,9 @@ def main():
             df_view = df_view[df_view[c_cat_nuevos].isin(sel_cat)]
         if c_tipo_nuevos and sel_tipo:
             df_view = df_view[df_view[c_tipo_nuevos].isin(sel_tipo)]
+        # NUEVO: Filtro Categoría ALSUM
+        if c_cat_alsum_nuevos and sel_cat_alsum:
+            df_view = df_view[df_view[c_cat_alsum_nuevos].isin(sel_cat_alsum)]
 
         # --- CRUCE CON PLAN (PRIMAS/SINIESTROS) ---
         has_finance = False
@@ -331,7 +344,7 @@ def main():
 
         # --- KPIS DASHBOARD ---
         st.markdown("### 📊 Indicadores de Nuevas Incorporaciones")
-        k1, k2, k3, k4, k5 = st.columns(5)
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
         
         total_nuevos = len(df_view)
         paises_activos = df_view[c_pais_nuevos].nunique() if c_pais_nuevos else 0
@@ -343,7 +356,10 @@ def main():
             asociados = len(df_view[normalize_text(df_view[c_tipo_nuevos]).str.contains('asociado', na=False)])
         
         total_primas = df_view['Primas'].sum() if has_finance and 'Primas' in df_view.columns else 0
-        
+
+        # NUEVO: KPI Categoría ALSUM
+        total_cat_alsum = df_view[c_cat_alsum_nuevos].nunique() if c_cat_alsum_nuevos else 0
+
         k1.metric("Nuevas Empresas", total_nuevos, delta="2025 Activo")
         k2.metric("Países Detectados", paises_activos)
         k3.metric("Miembros (Core)", miembros)
@@ -352,11 +368,16 @@ def main():
             k5.metric("Primas Estimadas", f"${total_primas:,.0f}")
         else:
             k5.metric("Finanzas", "No Cruzado")
+        # NUEVO KPI
+        if c_cat_alsum_nuevos:
+            k6.metric("Categorías ALSUM (Rubro)", total_cat_alsum)
+        else:
+            k6.metric("Categorías ALSUM", "No data")
 
         st.markdown("---")
-        
+
         # --- GRÁFICOS ---
-        row2_1, row2_2 = st.columns(2)
+        row2_1, row2_2, row2_3 = st.columns(3)
         with row2_1:
             if c_pais_nuevos and c_tipo_nuevos:
                 st.markdown("**Distribución por País y Tipo**")
@@ -375,6 +396,25 @@ def main():
                     title="Radiografía del Mercado", color=c_pais_nuevos
                 )
                 st.plotly_chart(fig_sun, use_container_width=True)
+
+        # NUEVO: Gráfico Categoría ALSUM
+        with row2_3:
+            if c_cat_alsum_nuevos:
+                st.markdown("**Nuevos por Categoría ALSUM (Rubro)**")
+                conteo_alsum = df_view[c_cat_alsum_nuevos].value_counts().reset_index()
+                conteo_alsum.columns = ['Categoría ALSUM', 'Nuevos']
+                fig_alsum = px.bar(
+                    conteo_alsum, 
+                    x='Categoría ALSUM', 
+                    y='Nuevos', 
+                    color='Nuevos',
+                    color_continuous_scale="Blues",
+                    title="Nuevos por Rubro de Negocio"
+                )
+                fig_alsum.update_layout(xaxis={'categoryorder':'total descending'})
+                st.plotly_chart(fig_alsum, use_container_width=True)
+            else:
+                st.info("No hay datos de Categoría ALSUM para graficar.")
 
         with st.expander("📋 Ver Datos Filtrados"):
             st.dataframe(df_view.drop(columns=['key_merge'], errors='ignore'), use_container_width=True)
