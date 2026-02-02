@@ -105,7 +105,7 @@ def normaliza_empresa(nombre):
     nombre = re.sub(r'\s+', ' ', nombre)  # Espacios simples
     return nombre.strip()
 def load_data_master():
-    plan_path = utils.get_file_path("plan_2026.csv")
+    plan_path = utils.get_file_path("plan_2026.xlsx")
     dir_path = utils.get_file_path("Directorio_Afiliados_2025.xlsx")
     
     # 1. Directorio
@@ -165,7 +165,7 @@ def load_data_master():
         return None, None, None, f"Error cargando Nuevos: {str(e)}"
     
     # 3. Plan 2026
-    df_plan, err = utils.load_plan_accion_procesado(plan_path)
+    df_plan, err = utils.load_plan_accion_procesado(plan_path, sheet_name="plan_2026")
     if err: return None, None, None, f"Error Plan: {err}"
     
     return df_dir, df_nuevos, df_plan, None
