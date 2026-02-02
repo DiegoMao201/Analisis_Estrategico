@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 import io
 import utils  # Se asume que existe tu librería original 'utils.py'
 from openai import OpenAI # Cliente oficial de OpenAI
+import unicodedata
+import re
 
 # ==============================================================================
 # 1. CONFIGURACIÓN ESTRATÉGICA Y ESTILOS
@@ -94,6 +96,14 @@ def clean_column_names(df):
 # ==============================================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def normaliza_empresa(nombre):
+    if pd.isna(nombre): return ""
+    nombre = str(nombre).upper().strip()
+    nombre = unicodedata.normalize('NFKD', nombre)
+    nombre = "".join([c for c in nombre if not unicodedata.combining(c)])
+    nombre = re.sub(r'[^A-Z0-9 ]', '', nombre)  # Solo letras, números y espacio
+    nombre = re.sub(r'\s+', ' ', nombre)  # Espacios simples
+    return nombre.strip()
 def load_data_master():
     plan_path = utils.get_file_path("plan_2026.csv")
     dir_path = utils.get_file_path("Directorio_Afiliados_2025.xlsx")
@@ -140,14 +150,13 @@ def load_data_master():
             col_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
             
             if col_pais_dir and col_empresa_dir and col_empresa_nuevos:
-                # Crear diccionario normalizado (minusculas -> Pais)
-                keys = df_dir[col_empresa_dir].astype(str).str.strip().str.lower()
-                values = df_dir[col_pais_dir]
-                mapa_pais = dict(zip(keys, values))
+                # Normaliza ambos lados con la función fuerte
+                df_dir['empresa_norm'] = df_dir[col_empresa_dir].apply(normaliza_empresa)
+                df_nuevos['empresa_norm'] = df_nuevos[col_empresa_nuevos].apply(normaliza_empresa)
                 
                 # Mapear
-                claves_nuevos = df_nuevos[col_empresa_nuevos].astype(str).str.strip().str.lower()
-                df_nuevos['País_Detectado'] = claves_nuevos.map(mapa_pais).fillna('Sin Asignar')
+                mapa_pais = dict(zip(df_dir['empresa_norm'], df_dir[col_pais_dir]))
+                df_nuevos['País_Detectado'] = df_nuevos['empresa_norm'].map(mapa_pais).fillna('Sin Asignar')
             else:
                 df_nuevos['País_Detectado'] = 'No Data (Faltan Columnas)'
         else:
@@ -220,7 +229,7 @@ def main():
     # --- BOTÓN PARA FORZAR RECARGA DE DATOS ---
     if st.button("🔄 Recargar datos (forzar actualización)"):
         st.cache_data.clear()
-        st.experimental_rerun()
+        st.rerun()
 
     col_logo, col_title, col_download = st.columns([1, 4, 2])
     with col_title:
