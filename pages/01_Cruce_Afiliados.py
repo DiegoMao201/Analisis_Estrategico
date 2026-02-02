@@ -257,40 +257,39 @@ def main():
     # ==========================================================================
     with tab1:
         st.subheader("Panel de Control: Nuevas Incorporaciones")
-        
-        # Detectar columnas clave con la función robusta
-        c_pais_nuevos = find_col(df_nuevos, ['país', 'pais', 'detectado'])
-        c_cat_nuevos = find_col(df_nuevos, ['categoria', 'tipo compañía', 'tipo compañia'])
-        c_tipo_nuevos = find_col(df_nuevos, ['tipo de afiliado', 'tipo afiliado', 'tipo'])
+
+        # 1. Solo tomar la columna de empresa de nuevos
         c_empresa_nuevos = find_col(df_nuevos, ['empresa', 'compañía'])
-        c_cat_alsum_nuevos = find_col(df_nuevos, ['categoría alsum', 'categoria alsum', 'tipo de compañía'])
+        df_nuevos_empresas = df_nuevos[[c_empresa_nuevos]].copy()
 
-        # --- NUEVO: MERGE CON DIRECTORIO PARA ENRIQUECER INFORMACIÓN ---
-        # Detectar columna empresa en directorio
+        # 2. Merge con directorio usando empresa normalizada
         c_empresa_dir = find_col(df_dir, ['empresa', 'compañía', 'compañia'])
-        # Columnas a traer del directorio
-        cols_dir_extra = [
-            'PAÍS SEDE OPERACIÓN', 'PAÍSES DÓNDE TIENE PRESENCIA', 'VALOR DE LA MEMBRESÍA',
-            'TIPO DE EMPRESA', 'CATEGORÍA ALSUM', 'CATEGORIA'
-        ]
-        # Buscar nombres reales de esas columnas en df_dir
-        cols_dir_extra_real = [find_col(df_dir, [col]) for col in cols_dir_extra]
-        # Filtrar solo las que existen
-        cols_dir_extra_real = [col for col in cols_dir_extra_real if col]
+        df_nuevos_empresas['empresa_norm'] = df_nuevos_empresas[c_empresa_nuevos].str.upper().str.strip()
+        df_dir['empresa_norm'] = df_dir[c_empresa_dir].str.upper().str.strip()
 
-        # Hacer merge si existen las columnas clave
-        if c_empresa_nuevos and c_empresa_dir:
-            # Normalizar para merge robusto
-            df_nuevos['empresa_norm'] = df_nuevos[c_empresa_nuevos].str.upper().str.strip()
-            df_dir['empresa_norm'] = df_dir[c_empresa_dir].str.upper().str.strip()
-            # Hacemos el merge
-            df_nuevos = pd.merge(
-                df_nuevos,
-                df_dir[['empresa_norm'] + cols_dir_extra_real],
-                on='empresa_norm',
-                how='left',
-                suffixes=('', '_dir')
-            )
+        # 3. Selecciona solo las columnas relevantes del directorio
+        cols_dir_extra = [
+            c_empresa_dir,
+            find_col(df_dir, ['país sede operación', 'pais sede operacion']),
+            find_col(df_dir, ['países dónde tiene presencia', 'paises donde tiene presencia']),
+            find_col(df_dir, ['valor de la membresía', 'valor de la membresia']),
+            find_col(df_dir, ['tipo de empresa']),
+            find_col(df_dir, ['categoría alsum', 'categoria alsum']),
+            find_col(df_dir, ['categoria'])
+        ]
+        # Filtra columnas que existen
+        cols_dir_extra = [col for col in cols_dir_extra if col]
+
+        # 4. Merge final: solo empresa de nuevos + info del directorio
+        df_nuevos_final = pd.merge(
+            df_nuevos_empresas,
+            df_dir[['empresa_norm'] + cols_dir_extra],
+            on='empresa_norm',
+            how='left'
+        )
+
+        # 5. Elimina columnas auxiliares
+        df_nuevos_final = df_nuevos_final.drop(columns=['empresa_norm'], errors='ignore')
 
         # --- FILTROS ---
         with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
@@ -320,7 +319,7 @@ def main():
                 col_f4.info("Columna 'Categoría ALSUM' no encontrada")
 
         # --- APLICACIÓN DE FILTROS ---
-        df_view = df_nuevos.copy()
+        df_view = df_nuevos_final.copy()
         if c_pais_nuevos and sel_paises:
             df_view = df_view[df_view[c_pais_nuevos].isin(sel_paises)]
         if c_cat_nuevos and sel_cat:
@@ -446,7 +445,7 @@ def main():
             # Elimina columnas Unnamed antes de mostrar
             cols_to_drop = [col for col in df_view.columns if str(col).lower().startswith('unnamed')]
             st.dataframe(
-                df_view.drop(columns=cols_to_drop + ['key_merge', 'empresa_norm'], errors='ignore'),
+                df_view.drop(columns=cols_to_drop, errors='ignore'),
                 use_container_width=True
             )
 
