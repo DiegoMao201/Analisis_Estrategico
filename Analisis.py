@@ -121,7 +121,12 @@ if 'AFILIADO' in df_final.columns:
 
 # Filtro RAMO (ahora muestra todos los ramos, incluyendo "No reporta")
 if 'Ramo' in df_final.columns:
-    ramos_disp = sorted(df_final['Ramo'].dropna().unique())
+    # Excluir portuarios y petroleros (cualquier mayúscula/minúscula)
+    ramos_excluir = ['riesgos portuarios', 'riesgos petroleros']
+    ramos_disp = sorted([
+        r for r in df_final['Ramo'].dropna().unique()
+        if r.strip().lower() not in ramos_excluir
+    ])
     filtro_ramos = st.sidebar.multiselect("📦 Ramo / Producto", ramos_disp, default=ramos_disp)
     if filtro_ramos:
         df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
