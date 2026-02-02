@@ -291,6 +291,12 @@ def main():
         # 5. Elimina columnas auxiliares
         df_nuevos_final = df_nuevos_final.drop(columns=['empresa_norm'], errors='ignore')
 
+        # Definir columnas clave en el DataFrame enriquecido
+        c_pais_nuevos = find_col(df_nuevos_final, ['país', 'pais'])
+        c_cat_nuevos = find_col(df_nuevos_final, ['categoria'])
+        c_tipo_nuevos = find_col(df_nuevos_final, ['tipo de empresa', 'tipo de afiliado', 'tipo afiliado'])
+        c_cat_alsum_nuevos = find_col(df_nuevos_final, ['categoría alsum', 'categoria alsum'])
+
         # --- FILTROS ---
         with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
