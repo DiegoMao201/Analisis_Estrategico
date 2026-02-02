@@ -170,7 +170,6 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
         for m in ['Primas', 'Siniestros']:
             if m not in pivot_df.columns: pivot_df[m] = 0.0
         
-        pivot_df['Siniestros'] = pivot_df['Siniestros'].abs()
         pivot_df['Resultado Técnico'] = pivot_df['Primas'] - pivot_df['Siniestros']
         
         pivot_df['Siniestralidad'] = 0.0
