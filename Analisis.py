@@ -67,12 +67,12 @@ st.markdown("""
 # 2. CARGA DE DATOS ROBUSTA
 # ==========================================
 # Apuntamos al CSV para velocidad máxima
-DATA_FILE = "plan_2026.csv"
+DATA_FILE = "plan_2026.xlsx"
 FULL_PATH = utils.get_file_path(DATA_FILE)
 
-# Spinner de carga elegante
 with st.spinner('🚀 Inicializando Motor de Inteligencia de Negocios...'):
-    df_final, error = utils.load_plan_accion_procesado(FULL_PATH)
+    # Especifica el nombre de la hoja, por ejemplo "Plan2026"
+    df_final, error = utils.load_plan_accion_procesado(FULL_PATH, sheet_name="plan_2026")
 
 # Manejo de Errores Críticos
 if error:
