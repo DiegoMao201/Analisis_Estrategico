@@ -572,6 +572,11 @@ def main():
                 )
                 fig_pie_pais.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_pie_pais, use_container_width=True)
+                # Ejemplo debajo de la gráfica de participación por país
+                contexto = conteo_pais_pie.head(10).to_string()
+                prompt = "Analiza la gráfica de participación por país."
+                analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+                st.info(analisis)
             else:
                 st.warning("No hay datos de País para graficar.")
         

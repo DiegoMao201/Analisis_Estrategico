@@ -326,6 +326,12 @@ with tab2:
         )
         st.plotly_chart(fig_tipo, use_container_width=True)
 
+        # Ejemplo debajo de la gráfica de participación por tipo de afiliado
+        contexto = tipo_part.head(10).to_string()
+        prompt = "Analiza la gráfica de participación por tipo de afiliado."
+        analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+        st.info(analisis)
+
 # === TAB 3: GENERADOR PDF IA ===
 with tab3:
     st.header("🧠 Inteligencia Artificial - Generador de Informes")
@@ -433,6 +439,12 @@ with tab4:
             use_container_width=True
         )
         
+        # Ejemplo debajo de la tabla de top riesgos
+        contexto = comp_scatter.sort_values("Siniestros", ascending=False).head(10).to_string()
+        prompt = "Analiza la tabla de top riesgos por siniestros altos."
+        analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+        st.info(analisis)
+        
     st.markdown("### Tabla de Datos Completa")
     st.dataframe(
     df_filtrado.style.format({
@@ -452,3 +464,8 @@ st.dataframe(
     use_container_width=True,
     hide_index=True
 )
+
+contexto = empresas_por_pais.head(10).to_string()
+prompt = "Analiza la tabla de empresas por país."
+analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+st.info(analisis)
