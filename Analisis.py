@@ -153,12 +153,13 @@ with st.expander("🛠️ Herramientas de Análisis Profundo", expanded=False):
             sel_comp = st.multiselect("Filtrar por Compañía específica:", comps)
             if sel_comp:
                 df_filtrado = df_filtrado[df_filtrado['Compañía'].isin(sel_comp)]
-    with c_f2:
-        metrica_focus = st.selectbox(
-            "Métrica para Tablas:",
-            ["Primas", "Siniestros", "Resultado Técnico"],
-            index=0
-        )
+    # Elimina el bloque de métricas
+    # with c_f2:
+    #     metrica_focus = st.selectbox(
+    #         "Métrica para Tablas:",
+    #         ["Primas", "Siniestros", "Resultado Técnico"],
+    #         index=0
+    #     )
 
 # Verificar si quedaron datos después de filtrar
 if df_filtrado.empty:
@@ -272,7 +273,7 @@ with tab2:
     st.plotly_chart(fig_bar, use_container_width=True)
     
     st.markdown("#### Detalle Anual por Ramo")
-    pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', valor=metrica_focus)
+    pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', valor='Primas')
     st.dataframe(
     pivot_ramo.style.format({
         col: '${:,.0f}' if 'TOTAL' in col or 'Primas' in col or 'Siniestros' in col else '{:,.0f}%'
