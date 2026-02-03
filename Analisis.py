@@ -8,6 +8,8 @@ from openai import OpenAI
 # Importamos tu cerebro robusto
 import utils
 
+api_key = utils.get_api_key()
+
 # ==========================================
 # 0. CONFIGURACIÓN INICIAL & ESTILOS PREMIUM
 # ==========================================
