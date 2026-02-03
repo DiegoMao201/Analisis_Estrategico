@@ -266,20 +266,25 @@ def main():
 
     # Ahora, en vez de usar st.tabs, usa el índice para mostrar el contenido de la pestaña
     if tab_idx == 0:
-        # ...contenido de tab1...
-        pass
+        # Código de la pestaña 1 (antes dentro de 'with tab1:')
+        st.subheader("Panel de Control: Nuevas Incorporaciones")
+        # ...resto del código de tab1...
     elif tab_idx == 1:
-        # ...contenido de tab2...
-        pass
+        # Código de la pestaña 2 (antes dentro de 'with tab2:')
+        st.header("📋 Directorio de Afiliados: Inteligencia & KPIs")
+        # ...resto del código de tab2...
     elif tab_idx == 2:
-        # ...contenido de tab3...
-        pass
+        # Código de la pestaña 3 (antes dentro de 'with tab3:')
+        st.subheader("Auditoría de Datos")
+        # ...resto del código de tab3...
     elif tab_idx == 3:
-        # ...contenido de tab4...
-        pass
+        # Código de la pestaña 4 (antes dentro de 'with tab4:')
+        st.header("📊 Comparativo País & KPIs")
+        # ...resto del código de tab4...
     elif tab_idx == 4:
-        # ...contenido de tab5...
-        pass
+        # Código de la pestaña 5 (antes dentro de 'with tab5:')
+        st.header("🤖 Laboratorio de Inteligencia Artificial")
+        # ...resto del código de tab5...
 
     # ==========================================================================
     # TAB 1: DASHBOARD NUEVOS (LÓGICA ORIGINAL OPTIMIZADA)
@@ -292,7 +297,7 @@ def main():
         df_nuevos_empresas = df_nuevos[[c_empresa_nuevos]].copy()
 
         # 2. Merge con directorio usando empresa normalizada
-        c_empresa_dir = find_col(df_dir, ['empresa', 'compañía', 'compañia'])
+        c_empresa_dir = find_col(df_dir, ['empresa', 'compañía', 'compañia', 'nombre'])
         df_nuevos_empresas['empresa_norm'] = df_nuevos_empresas[c_empresa_nuevos].str.upper().str.strip()
         df_dir['empresa_norm'] = df_dir[c_empresa_dir].str.upper().str.strip()
 
