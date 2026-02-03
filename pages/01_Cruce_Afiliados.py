@@ -34,18 +34,24 @@ st.markdown("""
     }
     
     /* Tabs más profesionales */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #ffffff;
-        border-radius: 5px 5px 0 0;
-        padding: 10px 20px;
+        border-radius: 4px;
+        padding: 10px 16px;
         color: #003366;
         font-weight: 600;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        border: 1px solid #e0e0e0;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #003366;
-        color: white;
+        background-color: #003366 !important;
+        color: white !important;
+        border: 1px solid #003366;
     }
+    
+    /* Ajustes generales */
+    .block-container { padding-top: 2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -104,6 +110,7 @@ def normaliza_empresa(nombre):
     nombre = re.sub(r'[^A-Z0-9 ]', '', nombre)  # Solo letras, números y espacio
     nombre = re.sub(r'\s+', ' ', nombre)  # Espacios simples
     return nombre.strip()
+
 def load_data_master():
     plan_path = utils.get_file_path("plan_2026.xlsx")
     dir_path = utils.get_file_path("Directorio_Afiliados_2025.xlsx")
@@ -224,13 +231,15 @@ def main():
             st.success("API Key Detectada")
         else:
             st.warning("API Key No Detectada")
-    st.info("Sistema cargado y optimizado.")
+        
+        st.markdown("---")
+        
+        # --- BOTÓN PARA FORZAR RECARGA DE DATOS ---
+        if st.button("🔄 Recargar datos", help="Fuerza la actualización de la caché"):
+            st.cache_data.clear()
+            st.rerun()
 
-    # --- BOTÓN PARA FORZAR RECARGA DE DATOS ---
-    if st.button("🔄 Recargar datos (forzar actualización)"):
-        st.cache_data.clear()
-        st.rerun()
-
+    # --- CABECERA PRINCIPAL ---
     col_logo, col_title, col_download = st.columns([1, 4, 2])
     with col_title:
         st.title("ALSUM Analytics | Estrategia 360º")
@@ -242,49 +251,20 @@ def main():
     if error_msg:
         st.error(error_msg)
         st.stop()
-        
-    # --- TABS REORGANIZADOS ---
-    if "active_tab" not in st.session_state:
-        st.session_state.active_tab = 0
+    
+    st.markdown("---")
 
-    tab_labels = [
+    # ==========================================================================
+    # SISTEMA DE PESTAÑAS NATIVAS (STABLE TABS)
+    # ==========================================================================
+    # Creamos las 5 pestañas de forma estática y estable
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🌍 Dashboard Nuevos",
         "📋 Directorio & Desglose",
         "📂 Data Warehouse",
         "📈 Comparativo País & KPIs",
         "🤖 Laboratorio IA"
-    ]
-
-    tab_idx = st.selectbox(
-        "Selecciona una pestaña:",
-        options=range(len(tab_labels)),
-        format_func=lambda i: tab_labels[i],
-        index=st.session_state.active_tab,
-        key="tab_selector",
-        on_change=lambda: st.session_state.update(active_tab=st.session_state.tab_selector)
-    )
-
-    # Ahora, en vez de usar st.tabs, usa el índice para mostrar el contenido de la pestaña
-    if tab_idx == 0:
-        # Código de la pestaña 1 (antes dentro de 'with tab1:')
-        st.subheader("Panel de Control: Nuevas Incorporaciones")
-        # ...resto del código de tab1...
-    elif tab_idx == 1:
-        # Código de la pestaña 2 (antes dentro de 'with tab2:')
-        st.header("📋 Directorio de Afiliados: Inteligencia & KPIs")
-        # ...resto del código de tab2...
-    elif tab_idx == 2:
-        # Código de la pestaña 3 (antes dentro de 'with tab3:')
-        st.subheader("Auditoría de Datos")
-        # ...resto del código de tab3...
-    elif tab_idx == 3:
-        # Código de la pestaña 4 (antes dentro de 'with tab4:')
-        st.header("📊 Comparativo País & KPIs")
-        # ...resto del código de tab4...
-    elif tab_idx == 4:
-        # Código de la pestaña 5 (antes dentro de 'with tab5:')
-        st.header("🤖 Laboratorio de Inteligencia Artificial")
-        # ...resto del código de tab5...
+    ])
 
     # ==========================================================================
     # TAB 1: DASHBOARD NUEVOS (LÓGICA ORIGINAL OPTIMIZADA)
@@ -331,30 +311,32 @@ def main():
         c_tipo_nuevos = find_col(df_nuevos_final, ['tipo de empresa', 'tipo de afiliado', 'tipo afiliado'])
         c_cat_alsum_nuevos = find_col(df_nuevos_final, ['categoría alsum', 'categoria alsum'])
 
-        # --- FILTROS ---
-        with st.expander("🔎 Filtros de Datos (Nuevos)", expanded=True):
+        # --- FILTROS TAB 1 ---
+        # Usamos st.container para agrupar visualmente
+        with st.container():
+            st.markdown("#### 🔎 Filtros de Datos (Nuevos)")
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
             sel_paises = []
             if c_pais_nuevos:
                 paises_disp = sorted(df_nuevos_final[c_pais_nuevos].dropna().astype(str).unique())
-                sel_paises = col_f1.multiselect("Filtrar por País", paises_disp, default=paises_disp)
+                # KEY ÚNICA IMPORTANTE
+                sel_paises = col_f1.multiselect("Filtrar por País", paises_disp, default=paises_disp, key="t1_pais")
             
             sel_cat = []
             if c_cat_nuevos:
                 cats_disp = sorted(df_nuevos_final[c_cat_nuevos].dropna().astype(str).unique())
-                sel_cat = col_f2.multiselect("Filtrar por Categoría", cats_disp, default=cats_disp)
+                sel_cat = col_f2.multiselect("Filtrar por Categoría", cats_disp, default=cats_disp, key="t1_cat")
             
             sel_tipo = []
             if c_tipo_nuevos:
                 tipos_disp = sorted(df_nuevos_final[c_tipo_nuevos].dropna().astype(str).unique())
-                sel_tipo = col_f3.multiselect("Filtrar por Tipo Afiliado", tipos_disp, default=tipos_disp)
+                sel_tipo = col_f3.multiselect("Filtrar por Tipo Afiliado", tipos_disp, default=tipos_disp, key="t1_tipo")
 
-            # NUEVO: Filtro Categoría ALSUM
             sel_cat_alsum = []
             if c_cat_alsum_nuevos:
                 cats_alsum_disp = sorted(df_nuevos_final[c_cat_alsum_nuevos].dropna().astype(str).unique())
-                sel_cat_alsum = col_f4.multiselect("Filtrar por Categoría ALSUM (Rubro)", cats_alsum_disp, default=cats_alsum_disp)
+                sel_cat_alsum = col_f4.multiselect("Categoría ALSUM (Rubro)", cats_alsum_disp, default=cats_alsum_disp, key="t1_alsum")
             else:
                 col_f4.info("Columna 'Categoría ALSUM' no encontrada")
 
@@ -366,7 +348,6 @@ def main():
             df_view = df_view[df_view[c_cat_nuevos].isin(sel_cat)]
         if c_tipo_nuevos and sel_tipo:
             df_view = df_view[df_view[c_tipo_nuevos].isin(sel_tipo)]
-        # NUEVO: Filtro Categoría ALSUM
         if c_cat_alsum_nuevos and sel_cat_alsum:
             df_view = df_view[df_view[c_cat_alsum_nuevos].isin(sel_cat_alsum)]
 
@@ -381,7 +362,7 @@ def main():
             plan_pivot = df_plan.pivot_table(
                 index=c_plan_cia, columns=c_plan_tipo, values=c_plan_usd, aggfunc='sum', fill_value=0
             ).reset_index()
-            # Renombrar columnas del pivot para facilitar merge
+            # Renombrar columnas del pivot
             plan_pivot.columns = [str(c).strip() for c in plan_pivot.columns]
             
             # Normalizar nombres para cruce
@@ -390,7 +371,6 @@ def main():
                 df_view['key_merge'] = normalize_text(df_view[c_empresa_nuevos])
                 
                 # Merge
-                # Buscamos columnas de Primas/Siniestros en el pivot
                 c_primas = find_col(plan_pivot, ['primas'])
                 c_siniestros = find_col(plan_pivot, ['siniestros'])
                 
@@ -401,20 +381,20 @@ def main():
                 if len(cols_to_merge) > 1:
                     df_view = pd.merge(df_view, plan_pivot[cols_to_merge], on='key_merge', how='left')
                     has_finance = True
-                    # Renombrar para consistencia visual
+                    # Renombrar
                     rename_fin = {}
                     if c_primas: rename_fin[c_primas] = 'Primas'
                     if c_siniestros: rename_fin[c_siniestros] = 'Siniestros'
                     df_view = df_view.rename(columns=rename_fin)
 
+        st.divider()
+
         # --- KPIS DASHBOARD ---
-        st.markdown("### 📊 Indicadores de Nuevas Incorporaciones")
         k1, k2, k3, k4, k5, k6 = st.columns(6)
 
         total_nuevos = len(df_view)
         paises_activos = df_view[c_pais_nuevos].nunique() if c_pais_nuevos else 0
 
-        # NUEVO: Miembros y Asociados usando la columna CATEGORIA
         miembros = 0
         asociados = 0
         if c_cat_nuevos:
@@ -423,8 +403,6 @@ def main():
             asociados = (cat_norm == "asociado").sum()
 
         total_primas = df_view['Primas'].sum() if has_finance and 'Primas' in df_view.columns else 0
-
-        # NUEVO: KPI Categoría ALSUM
         total_cat_alsum = df_view[c_cat_alsum_nuevos].nunique() if c_cat_alsum_nuevos else 0
 
         k1.metric("Nuevas Empresas", total_nuevos, delta="2025 Activo")
@@ -436,14 +414,13 @@ def main():
         else:
             k5.metric("Finanzas", "No Cruzado")
         if c_cat_alsum_nuevos:
-            k6.metric("Categorías ALSUM (Rubro)", total_cat_alsum)
+            k6.metric("Categorías ALSUM", total_cat_alsum)
         else:
             k6.metric("Categorías ALSUM", "No data")
 
-        st.markdown("---")
+        st.divider()
 
-        # --- GRÁFICOS REORGANIZADOS ---
-        # Dos columnas principales para las gráficas más importantes
+        # --- GRÁFICOS TAB 1 ---
         col_g1, col_g2 = st.columns([2, 2])
         with col_g1:
             if c_pais_nuevos and c_tipo_nuevos:
@@ -463,7 +440,6 @@ def main():
                 )
                 st.plotly_chart(fig_sun, use_container_width=True)
 
-        # Gráfico de Categoría ALSUM ocupa todo el ancho abajo
         st.markdown(" ")
         if c_cat_alsum_nuevos:
             st.markdown("**Nuevos por Categoría ALSUM (Rubro)**")
@@ -483,74 +459,57 @@ def main():
             st.info("No hay datos de Categoría ALSUM para graficar.")
 
         with st.expander("📋 Ver Datos Filtrados"):
-            # Elimina columnas Unnamed y deja solo "Empresa" y columnas del directorio (sin empresa_norm)
             cols_to_drop = [col for col in df_view.columns if str(col).lower().startswith('unnamed') or col == 'empresa_norm']
-            # Solo deja la columna "Empresa" y las columnas del directorio (excluye duplicados de empresa)
             cols_final = [col for col in df_view.columns if col.lower() == "empresa" or (col not in cols_to_drop and col.lower() != "empresa_norm")]
-            st.dataframe(
-                df_view[cols_final],
-                use_container_width=True
-            )
+            st.dataframe(df_view[cols_final], use_container_width=True)
 
     # ==========================================================================
-    # TAB 2: DIRECTORIO & DESGLOSE (MEJORADO FULL)
+    # TAB 2: DIRECTORIO & DESGLOSE
     # ==========================================================================
     with tab2:
         st.header("📋 Directorio de Afiliados: Inteligencia & KPIs")
         
-        # 1. Identificar Columnas Clave en Directorio (Robustez)
-        
-        # A) País
+        # 1. Identificar Columnas Clave
         c_dir_pais_op = find_col(df_dir, ['país operación', 'pais operacion', 'país op', 'operación'])
-        
-        # B) Categoría ALSUM (Negocio: Aseguradora, Broker...)
-        # Buscamos explícitamente "Categoría ALSUM" o "Tipo de Compañía"
         c_dir_cat_alsum = find_col(df_dir, ['categoría alsum', 'categoria alsum', 'tipo de compañía'])
-        
-        # C) Categoría (Afiliación: Miembro vs Asociado) - SOLICITUD ESPECÍFICA
-        # Buscamos estrictamente "categoria" o "categoría" primero, para evitar conflicto con "Categoría ALSUM" si es posible,
-        # find_col buscará exacto primero.
         c_dir_membresia = find_col(df_dir, ['categoria', 'categoría'])
         
-        # Fallback: Si 'c_dir_membresia' terminó siendo el mismo que 'c_dir_cat_alsum', intentamos buscar algo más.
         if c_dir_membresia == c_dir_cat_alsum:
-             # Si son iguales, es posible que el excel solo tenga una columna "Categoría".
-             # Pero si existen dos, intentamos desambiguar buscando "Tipo de Afiliado" para la membresía.
              c_alternativo = find_col(df_dir, ['tipo de afiliado', 'tipo afiliado'])
              if c_alternativo:
                  c_dir_membresia = c_alternativo
 
-        # 2. Configuración de Filtros (AHORA SON 3)
+        # 2. Configuración de Filtros TAB 2 (KEYS ÚNICAS)
         with st.container():
             st.markdown("#### 🔍 Filtros Avanzados")
             col_filtro_1, col_filtro_2, col_filtro_3 = st.columns(3)
             
-            # Filtro 1: País Operación
+            # Filtro 1
             opciones_pais = []
             sel_pais_op = []
             if c_dir_pais_op:
                 opciones_pais = sorted(df_dir[c_dir_pais_op].dropna().astype(str).unique())
-                sel_pais_op = col_filtro_1.multiselect("🏳️ País de Operación", opciones_pais, default=opciones_pais, key="f_dir_pais")
+                sel_pais_op = col_filtro_1.multiselect("🏳️ País de Operación", opciones_pais, default=opciones_pais, key="t2_pais")
             else:
                 col_filtro_1.warning("Falta col. País")
 
-            # Filtro 2: Categoría ALSUM (Rubro de Negocio)
+            # Filtro 2
             opciones_cat = []
             sel_cat_alsum = []
             if c_dir_cat_alsum:
                 opciones_cat = sorted(df_dir[c_dir_cat_alsum].dropna().astype(str).unique())
-                sel_cat_alsum = col_filtro_2.multiselect("🏷️ Categoría ALSUM (Rubro)", opciones_cat, default=opciones_cat, key="f_dir_cat")
+                sel_cat_alsum = col_filtro_2.multiselect("🏷️ Categoría ALSUM (Rubro)", opciones_cat, default=opciones_cat, key="t2_cat")
             else:
                 col_filtro_2.warning("Falta col. Categoría ALSUM")
                 
-            # Filtro 3: Tipo Afiliado (Miembro vs Asociado) -> Usando col "Categoría"
+            # Filtro 3
             opciones_membresia = []
             sel_membresia = []
             if c_dir_membresia:
                 opciones_membresia = sorted(df_dir[c_dir_membresia].dropna().astype(str).unique())
-                sel_membresia = col_filtro_3.multiselect("🤝 Categoría (Miembro/Asociado)", opciones_membresia, default=opciones_membresia, key="f_dir_mem")
+                sel_membresia = col_filtro_3.multiselect("🤝 Categoría (Miembro/Asociado)", opciones_membresia, default=opciones_membresia, key="t2_mem")
             else:
-                col_filtro_3.info("Columna 'Categoría' (Miembro/Asociado) no encontrada")
+                col_filtro_3.info("Columna 'Categoría' no encontrada")
 
         # 3. Filtrado de Datos
         df_dir_filt = df_dir.copy()
@@ -571,7 +530,6 @@ def main():
         
         count_total = len(df_dir_filt)
         
-        # Conteo inteligente Miembros vs Asociados usando la columna detectada
         count_miembros = 0
         count_asociados = 0
         col_para_conteo = c_dir_membresia if c_dir_membresia else c_dir_cat_alsum
@@ -594,13 +552,11 @@ def main():
         col_viz1, col_viz2 = st.columns(2)
         
         with col_viz1:
-            # --- PARTICIPACIÓN POR PAÍS (SOLICITADO) ---
             if c_dir_pais_op:
                 st.markdown("### 🌎 Participación por País")
                 conteo_pais_pie = df_dir_filt[c_dir_pais_op].value_counts().reset_index()
                 conteo_pais_pie.columns = ['País', 'Cantidad']
                 
-                # Donut Chart
                 fig_pie_pais = px.pie(
                     conteo_pais_pie, 
                     values='Cantidad', 
@@ -615,7 +571,6 @@ def main():
                 st.warning("No hay datos de País para graficar.")
         
         with col_viz2:
-            # --- CATEGORÍAS ALSUM (RUBRO) ---
             if c_dir_cat_alsum:
                 st.markdown("### 🏢 Top Categorías de Negocio")
                 conteo_cat = df_dir_filt[c_dir_cat_alsum].value_counts().nlargest(10).reset_index()
@@ -634,7 +589,6 @@ def main():
             else:
                 st.warning("No hay datos de Categoría para graficar.")
 
-        # 6. Tabla de Datos
         st.subheader("Detalle de Empresas Filtradas")
         st.dataframe(df_dir_filt, use_container_width=True)
 
@@ -643,10 +597,15 @@ def main():
     # ==========================================================================
     with tab3:
         st.subheader("Auditoría de Datos")
-        v = st.radio("Ver Dataset:", ["Nuevos Procesados", "Directorio Completo", "Plan 2026"], horizontal=True)
-        if v == "Nuevos Procesados": st.dataframe(df_nuevos, use_container_width=True)
-        elif v == "Directorio Completo": st.dataframe(df_dir, use_container_width=True)
-        else: st.dataframe(df_plan, use_container_width=True)
+        # Radio con KEY ÚNICA
+        v = st.radio("Ver Dataset:", ["Nuevos Procesados", "Directorio Completo", "Plan 2026"], horizontal=True, key="t3_radio")
+        
+        if v == "Nuevos Procesados": 
+            st.dataframe(df_nuevos, use_container_width=True)
+        elif v == "Directorio Completo": 
+            st.dataframe(df_dir, use_container_width=True)
+        else: 
+            st.dataframe(df_plan, use_container_width=True)
 
     # ==========================================================================
     # TAB 4: COMPARATIVO Y NO AFILIADOS
@@ -710,9 +669,10 @@ def main():
         c_ia1, c_ia2 = st.columns([1, 2])
         with c_ia1:
             st.info("Configuración del Análisis")
-            dataset_opt = st.selectbox("Fuente de Datos", ["Nuevos Afiliados", "Directorio Filtrado", "No Afiliados"])
-            user_prompt = st.text_area("Instrucción para la IA:", "Dame 3 estrategias clave basadas en estos datos.")
-            btn_ia = st.button("✨ Generar Insights", type="primary")
+            # Widgets con KEYS ÚNICAS
+            dataset_opt = st.selectbox("Fuente de Datos", ["Nuevos Afiliados", "Directorio Filtrado", "No Afiliados"], key="t5_select")
+            user_prompt = st.text_area("Instrucción para la IA:", "Dame 3 estrategias clave basadas en estos datos.", key="t5_prompt")
+            btn_ia = st.button("✨ Generar Insights", type="primary", key="t5_btn")
         
         with c_ia2:
             if btn_ia:
@@ -720,7 +680,7 @@ def main():
                 if dataset_opt == "Nuevos Afiliados":
                     contexto = df_nuevos.describe(include='all').to_string() + "\n\n" + df_nuevos.head(20).to_string()
                 elif dataset_opt == "Directorio Filtrado":
-                    # Usamos df_dir por simplicidad de scope local, idealmente usar el filtrado
+                    # Usamos df_dir por simplicidad, aunque idealmente se podría usar estado de sesión
                     contexto = df_dir.head(50).to_string()
                 elif dataset_opt == "No Afiliados":
                     if 'no_afiliados' in locals() and not no_afiliados.empty:
@@ -735,8 +695,8 @@ def main():
     # ==========================================================================
     # BOTÓN DE DESCARGA GLOBAL
     # ==========================================================================
+    # Se coloca en la columna de la cabecera o se puede poner en el sidebar
     with col_download:
-        # Preparamos hojas extra
         extra_sheets = {}
         if 'no_afiliados' in locals():
             extra_sheets['No_Afiliados'] = no_afiliados
@@ -748,7 +708,8 @@ def main():
             data=excel_data,
             file_name="ALSUM_Reporte_Estrategico_2026.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
+            type="primary",
+            key="btn_global_download"
         )
 
 if __name__ == "__main__":
