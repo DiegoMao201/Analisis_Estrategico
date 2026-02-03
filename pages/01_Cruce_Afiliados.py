@@ -244,13 +244,42 @@ def main():
         st.stop()
         
     # --- TABS REORGANIZADOS ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    if "active_tab" not in st.session_state:
+        st.session_state.active_tab = 0
+
+    tab_labels = [
         "🌍 Dashboard Nuevos",
         "📋 Directorio & Desglose",
         "📂 Data Warehouse",
         "📈 Comparativo País & KPIs",
         "🤖 Laboratorio IA"
-    ])
+    ]
+
+    tab_idx = st.selectbox(
+        "Selecciona una pestaña:",
+        options=range(len(tab_labels)),
+        format_func=lambda i: tab_labels[i],
+        index=st.session_state.active_tab,
+        key="tab_selector",
+        on_change=lambda: st.session_state.update(active_tab=st.session_state.tab_selector)
+    )
+
+    # Ahora, en vez de usar st.tabs, usa el índice para mostrar el contenido de la pestaña
+    if tab_idx == 0:
+        # ...contenido de tab1...
+        pass
+    elif tab_idx == 1:
+        # ...contenido de tab2...
+        pass
+    elif tab_idx == 2:
+        # ...contenido de tab3...
+        pass
+    elif tab_idx == 3:
+        # ...contenido de tab4...
+        pass
+    elif tab_idx == 4:
+        # ...contenido de tab5...
+        pass
 
     # ==========================================================================
     # TAB 1: DASHBOARD NUEVOS (LÓGICA ORIGINAL OPTIMIZADA)
