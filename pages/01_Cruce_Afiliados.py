@@ -431,6 +431,11 @@ def main():
                     barmode='stack', template="plotly_white"
                 )
                 st.plotly_chart(fig_stack, use_container_width=True)
+                # Ejemplo debajo de la gráfica de distribución por país y tipo
+                contexto = df_stack.head(10).to_string()
+                prompt = "Analiza la gráfica de distribución por país y tipo de afiliado."
+                analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+                st.info(analisis)
         with col_g2:
             if c_pais_nuevos and c_cat_nuevos:
                 st.markdown("**Jerarquía: País -> Categoría**")

@@ -253,6 +253,18 @@ with tab1:
         hide_index=True
     )
 
+    # Ejemplo debajo de la gráfica de burbujas en TAB 1
+    contexto = pais_df.head(10).to_string()
+    prompt = "Analiza la gráfica de matriz de desempeño de países."
+    analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+    st.info(analisis)
+
+    # Ejemplo debajo de la tabla de compañías
+    contexto = pivot_comp.head(10).to_string()
+    prompt = "Analiza la tabla de ranking de compañías."
+    analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
+    st.info(analisis)
+
 # === TAB 2: PRODUCTOS ===
 with tab2:
     st.subheader("Desempeño por Ramo de Negocio")

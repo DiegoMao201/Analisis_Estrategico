@@ -6,6 +6,7 @@ import re
 import gc
 from fpdf import FPDF
 from fuzzywuzzy import process, fuzz
+import openai
 
 # ==========================================
 # 1. GESTIÓN DE SISTEMA Y RUTAS
@@ -255,3 +256,23 @@ def fuzzy_merge(df_left, df_right, left_on, right_on, threshold=85):
     
     print("--- [UTILS] Cruce terminado.")
     return result
+
+def analisis_ia_3_puntos(api_key, prompt, contexto):
+    if not api_key:
+        return "⚠️ No se detectó la API Key."
+    client = OpenAI(api_key=api_key)
+    full_prompt = (
+        f"Actúa como analista de datos de seguros. Analiza la siguiente información:\n"
+        f"{contexto}\n\n"
+        f"{prompt}\n"
+        f"Responde en 3 puntos clave: 1) ¿Qué muestra la gráfica/tabla? 2) ¿Qué es lo más importante? 3) ¿Cuál es el insight o prioridad principal? Sé breve y muy preciso."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": full_prompt}],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error IA: {str(e)}"
