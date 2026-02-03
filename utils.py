@@ -7,6 +7,7 @@ import gc
 from fpdf import FPDF
 from fuzzywuzzy import process, fuzz
 import openai
+from openai import OpenAI
 
 # ==========================================
 # 1. GESTIÓN DE SISTEMA Y RUTAS
