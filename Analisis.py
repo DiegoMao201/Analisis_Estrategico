@@ -179,6 +179,21 @@ primas_no_reporta = df_filtrado[df_filtrado['Ramo'].str.lower() == 'no reporta']
 
 # === BLOQUE DE MANEJO DE "NO REPORTA" ===
 
+if 'Tipo' in df_filtrado.columns and 'Ramo' in df_filtrado.columns:
+    mask_no_reporta = (
+        (df_filtrado['Tipo'].str.lower() == 'no reporta') &
+        (df_filtrado['Ramo'].str.lower() == 'no reporta')
+    )
+    df_no_reporta = df_filtrado[mask_no_reporta]
+    df_normales = df_filtrado[~mask_no_reporta]
+elif 'Ramo' in df_filtrado.columns:
+    mask_no_reporta = (df_filtrado['Ramo'].str.lower() == 'no reporta')
+    df_no_reporta = df_filtrado[mask_no_reporta]
+    df_normales = df_filtrado[~mask_no_reporta]
+else:
+    df_no_reporta = pd.DataFrame()
+    df_normales = df_filtrado.copy()
+
 # 1. Separar registros "No reporta" (Tipo y Ramo)
 mask_no_reporta = (
     (df_filtrado['Tipo'].str.lower() == 'no reporta') &
