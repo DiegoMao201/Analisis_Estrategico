@@ -177,12 +177,36 @@ ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
 # NUEVO: Suma de "No reporta"
 primas_no_reporta = df_filtrado[df_filtrado['Ramo'].str.lower() == 'no reporta']['Primas'].sum() if 'Ramo' in df_filtrado.columns else 0
 
+# === BLOQUE DE MANEJO DE "NO REPORTA" ===
+
+# 1. Separar registros "No reporta" (Tipo y Ramo)
+mask_no_reporta = (
+    (df_filtrado['Tipo'].str.lower() == 'no reporta') &
+    (df_filtrado['Ramo'].str.lower() == 'no reporta')
+)
+df_no_reporta = df_filtrado[mask_no_reporta]
+df_normales = df_filtrado[~mask_no_reporta]
+
+# 2. KPIs (solo registros normales)
+primas_tot = df_normales['Primas'].sum()
+siniestros_tot = df_normales['Siniestros'].sum()
+res_tec = df_normales['Resultado Técnico'].sum()
+ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
+
+# 3. KPI "No reporta" (suma de USD, Primas y Siniestros si existen)
+no_reporta_total = 0
+if not df_no_reporta.empty:
+    # Suma todas las columnas numéricas relevantes
+    cols_sum = [col for col in ['USD', 'Primas', 'Siniestros'] if col in df_no_reporta.columns]
+    no_reporta_total = df_no_reporta[cols_sum].sum().sum()
+
+# 4. KPIs en pantalla
 k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("💰 Primas Totales (USD)", f"${primas_tot:,.0f}", delta="Volumen")
 k2.metric("🔥 Siniestros Totales", f"${siniestros_tot:,.0f}", delta="Costo", delta_color="inverse")
 k3.metric("📉 Siniestralidad", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta (65%)")
 k4.metric("📈 Resultado Técnico", f"${res_tec:,.0f}")
-k5.metric("No Reporta (Primas)", f"${primas_no_reporta:,.0f}")
+k5.metric("No Reporta (USD)", f"${no_reporta_total:,.0f}")
 
 st.markdown("---")
 
@@ -238,7 +262,7 @@ with tab1:
     st.markdown("### 🏆 Ranking de Compañías")
 
     # Agrupar y mostrar todas las columnas relevantes
-    pivot_comp = df_filtrado.groupby(['Compañía', 'País']).agg({
+    pivot_comp = df_normales.groupby(['Compañía', 'País']).agg({
         'Primas': 'sum',
         'Siniestros': 'sum',
         'Resultado Técnico': 'sum'
@@ -246,11 +270,9 @@ with tab1:
     pivot_comp['Siniestralidad'] = (pivot_comp['Siniestros'] / pivot_comp['Primas'] * 100).fillna(0)
     pivot_comp['Compañía'] = pivot_comp['Compañía'].astype(str).str.upper().str.strip()
 
-    # NUEVO: Agregar columna "No reporta"
-    if 'Ramo' in df_filtrado.columns:
-        no_reporta_df = df_filtrado[df_filtrado['Ramo'].str.lower() == 'no reporta']
-        no_reporta_sum = no_reporta_df.groupby(['Compañía', 'País'])['Primas'].sum().reset_index()
-        no_reporta_sum.rename(columns={'Primas': 'No reporta'}, inplace=True)
+    # Suma de "No reporta" por compañía
+    if not df_no_reporta.empty:
+        no_reporta_sum = df_no_reporta.groupby(['Compañía', 'País'])[['USD', 'Primas', 'Siniestros']].sum().sum(axis=1).reset_index(name='No reporta')
         pivot_comp = pd.merge(pivot_comp, no_reporta_sum, on=['Compañía', 'País'], how='left')
         pivot_comp['No reporta'] = pivot_comp['No reporta'].fillna(0)
     else:
@@ -311,13 +333,13 @@ with tab2:
     use_container_width=True
     )
 
-    # --- Participación de Afiliados vs No Afiliados ---
-    if 'AFILIADO' in df_filtrado.columns and 'Primas' in df_filtrado.columns:
-        total_primas = df_filtrado['Primas'].sum()
-        afiliados = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']['Primas'].sum()
-        no_afiliados = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']['Primas'].sum()
-        # NUEVO: Primas "No reporta"
-        no_reporta_afiliados = df_filtrado[(df_filtrado['AFILIADO'] == 'AFILIADO') & (df_filtrado['Ramo'].str.lower() == 'no reporta')]['Primas'].sum()
+    # --- Participación de Afiliados vs No Afiliados vs No reporta ---
+    if 'AFILIADO' in df_normales.columns and 'Primas' in df_normales.columns:
+        total_primas = df_normales['Primas'].sum()
+        afiliados = df_normales[df_normales['AFILIADO'] == 'AFILIADO']['Primas'].sum()
+        no_afiliados = df_normales[df_normales['AFILIADO'] == 'NO AFILIADO']['Primas'].sum()
+        # Primas "No reporta" (de los registros no reporta)
+        no_reporta_afiliados = df_no_reporta['USD'].sum() if 'USD' in df_no_reporta.columns else 0
         labels = ['Afiliados', 'No Afiliados', 'No reporta']
         values = [afiliados, no_afiliados, no_reporta_afiliados]
         fig_pie = px.pie(
@@ -328,7 +350,7 @@ with tab2:
             color_discrete_map={'Afiliados': '#004A8F', 'No Afiliados': '#B0B0B0', 'No reporta': '#FFB347'}
         )
         st.plotly_chart(fig_pie, use_container_width=True)
-        st.info(f"**Afiliados:** {afiliados/total_primas:.1%} | **No Afiliados:** {no_afiliados/total_primas:.1%} | **No reporta:** {no_reporta_afiliados/total_primas:.1%}")
+        st.info(f"**Afiliados:** {afiliados/total_primas:.1%} | **No Afiliados:** {no_afiliados/total_primas:.1%} | **No reporta:** {no_reporta_afiliados/(total_primas+no_reporta_afiliados):.1%}")
     else:
         st.warning("No se encontraron columnas 'AFILIADO' y 'Primas' para calcular la participación.")
 
