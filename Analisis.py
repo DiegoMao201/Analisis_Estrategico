@@ -194,13 +194,6 @@ else:
     df_no_reporta = pd.DataFrame()
     df_normales = df_filtrado.copy()
 
-# 1. Separar registros "No reporta" (Tipo y Ramo)
-mask_no_reporta = (
-    (df_filtrado['Tipo'].str.lower() == 'no reporta') &
-    (df_filtrado['Ramo'].str.lower() == 'no reporta')
-)
-df_no_reporta = df_filtrado[mask_no_reporta]
-df_normales = df_filtrado[~mask_no_reporta]
 
 # 2. KPIs (solo registros normales)
 primas_tot = df_normales['Primas'].sum()
