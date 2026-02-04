@@ -177,44 +177,68 @@ ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
 # NUEVO: Suma de "No reporta"
 primas_no_reporta = df_filtrado[df_filtrado['Ramo'].str.lower() == 'no reporta']['Primas'].sum() if 'Ramo' in df_filtrado.columns else 0
 
-# === BLOQUE DE MANEJO DE "NO REPORTA" ===
+# === BLOQUE DE KPIs Y PARTICIPACIÓN POR TIPO (PRIMAS, SINIESTROS, NO REPORTA) ===
 
-if 'Tipo' in df_filtrado.columns and 'Ramo' in df_filtrado.columns:
-    mask_no_reporta = (
-        (df_filtrado['Tipo'].str.lower() == 'no reporta') &
-        (df_filtrado['Ramo'].str.lower() == 'no reporta')
-    )
-    df_no_reporta = df_filtrado[mask_no_reporta]
-    df_normales = df_filtrado[~mask_no_reporta]
-elif 'Ramo' in df_filtrado.columns:
-    mask_no_reporta = (df_filtrado['Ramo'].str.lower() == 'no reporta')
-    df_no_reporta = df_filtrado[mask_no_reporta]
-    df_normales = df_filtrado[~mask_no_reporta]
+# 1. Separar los registros por Tipo (si existe la columna)
+if 'Tipo' in df_filtrado.columns:
+    df_primas = df_filtrado[df_filtrado['Tipo'].str.lower() == 'primas']
+    df_siniestros = df_filtrado[df_filtrado['Tipo'].str.lower() == 'siniestros']
+    df_no_reporta = df_filtrado[df_filtrado['Tipo'].str.lower() == 'no reporta']
 else:
+    df_primas = df_filtrado.copy()
+    df_siniestros = pd.DataFrame()
     df_no_reporta = pd.DataFrame()
-    df_normales = df_filtrado.copy()
 
+# 2. Sumar cada KPI por separado (soporta tanto 'USD' como 'Primas'/'Siniestros')
+def suma_col(df, colnames):
+    for col in colnames:
+        if col in df.columns:
+            return df[col].sum()
+    return 0
 
-# 2. KPIs (solo registros normales)
-primas_tot = df_normales['Primas'].sum()
-siniestros_tot = df_normales['Siniestros'].sum()
-res_tec = df_normales['Resultado Técnico'].sum()
+primas_tot = suma_col(df_primas, ['USD', 'Primas'])
+siniestros_tot = suma_col(df_siniestros, ['USD', 'Siniestros'])
+no_reporta_tot = suma_col(df_no_reporta, ['USD', 'Primas', 'Siniestros'])
+
+# 3. Resultado Técnico y Siniestralidad
+res_tec = primas_tot - siniestros_tot
 ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
 
-# 3. KPI "No reporta" (suma de USD, Primas y Siniestros si existen)
-no_reporta_total = 0
-if not df_no_reporta.empty:
-    # Suma todas las columnas numéricas relevantes
-    cols_sum = [col for col in ['USD', 'Primas', 'Siniestros'] if col in df_no_reporta.columns]
-    no_reporta_total = df_no_reporta[cols_sum].sum().sum()
-
 # 4. KPIs en pantalla
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("💰 Primas Totales (USD)", f"${primas_tot:,.0f}", delta="Volumen")
-k2.metric("🔥 Siniestros Totales", f"${siniestros_tot:,.0f}", delta="Costo", delta_color="inverse")
-k3.metric("📉 Siniestralidad", f"{ratio_global:.1f}%", delta=f"{65-ratio_global:.1f}% vs Meta (65%)")
-k4.metric("📈 Resultado Técnico", f"${res_tec:,.0f}")
-k5.metric("No Reporta (USD)", f"${no_reporta_total:,.0f}")
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("💰 Primas Totales", f"${primas_tot:,.0f}")
+k2.metric("🔥 Siniestros Totales", f"${siniestros_tot:,.0f}")
+k3.metric("📉 Siniestralidad", f"{ratio_global:.1f}%")
+k4.metric("No Reporta", f"${no_reporta_tot:,.0f}")
+
+st.markdown("---")
+
+# 5. Ranking de compañías por tipo (Primas, Siniestros, No reporta)
+if 'Compañía' in df_filtrado.columns and 'Tipo' in df_filtrado.columns:
+    ranking = df_filtrado.copy()
+    # Soporta tanto USD como Primas/Siniestros
+    valor_col = 'USD' if 'USD' in ranking.columns else 'Primas'
+    ranking_sum = ranking.groupby(['Compañía', 'Tipo'])[valor_col].sum().reset_index()
+    ranking_pivot = ranking_sum.pivot(index='Compañía', columns='Tipo', values=valor_col).fillna(0)
+    # Calcula resultado técnico si existen ambas columnas
+    if 'Primas' in ranking_pivot.columns and 'Siniestros' in ranking_pivot.columns:
+        ranking_pivot['Resultado Técnico'] = ranking_pivot['Primas'] - ranking_pivot['Siniestros']
+    ranking_pivot = ranking_pivot.reset_index()
+    st.dataframe(ranking_pivot, use_container_width=True)
+else:
+    st.dataframe(df_filtrado, use_container_width=True)
+
+# 6. Gráfica de participación por tipo
+if 'Tipo' in df_filtrado.columns:
+    valor_col = 'USD' if 'USD' in df_filtrado.columns else 'Primas'
+    tipo_part = df_filtrado.groupby('Tipo')[valor_col].sum().reset_index()
+    fig_tipo = px.pie(
+        tipo_part,
+        names='Tipo',
+        values=valor_col,
+        title="Participación por Tipo (Primas, Siniestros, No reporta)"
+    )
+    st.plotly_chart(fig_tipo, use_container_width=True)
 
 st.markdown("---")
 
