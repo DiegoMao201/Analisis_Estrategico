@@ -625,3 +625,23 @@ if 'Compañía' in df_filtrado.columns and sel_companias:
         .format({'Primas': '${:,.0f}', 'Siniestros': '${:,.0f}', 'No Reporta': '${:,.0f}', 'Siniestralidad %': '{:.1f}%'}),
         use_container_width=True
     )
+
+# ...después de la tabla de análisis por empresa y país...
+
+# --- TABLA: CUÁNTAS EMPRESAS HAY POR PAÍS (OBEDECE TODOS LOS FILTROS) ---
+if 'Compañía' in df_filtrado.columns and 'País' in df_filtrado.columns:
+    # Agrupa por país y cuenta empresas únicas
+    empresas_por_pais = (
+        df_filtrado.groupby('País')['Compañía']
+        .nunique()
+        .reset_index()
+        .rename(columns={'Compañía': 'Empresas Únicas'})
+        .sort_values('Empresas Únicas', ascending=False)
+    )
+    st.subheader("🌍 Empresas Únicas por País (Filtros Aplicados)")
+    st.dataframe(
+        empresas_por_pais.style
+        .format({'Empresas Únicas': '{:,.0f}'})
+        .background_gradient(subset=['Empresas Únicas'], cmap='Blues'),
+        use_container_width=True
+    )
