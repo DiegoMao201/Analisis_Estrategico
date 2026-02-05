@@ -1,17 +1,14 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import datetime
-import os
+import unicodedata
 from openai import OpenAI
-
-# Importamos tu cerebro robusto
-import utils
-
-api_key = utils.get_api_key()
+import os
 
 # ==========================================
-# 0. CONFIGURACIÓN INICIAL & ESTILOS PREMIUM
+# 0. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
 # ==========================================
 st.set_page_config(
     page_title="ALSUM 2026 | Strategic Command", 
@@ -20,524 +17,611 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS Profesional para que se vea como una App de alto nivel
+# ==========================================
+# 1. IMPORTACIÓN SEGURA DE UTILS
+# ==========================================
+# Intentamos importar utils, si falla definimos funciones dummy para que no rompa
+try:
+    import utils
+    # Intentamos obtener la API key y el path, manejando errores si la función no existe
+    try:
+        api_key = utils.get_api_key()
+    except AttributeError:
+        api_key = None
+        
+    try:
+        FULL_PATH = utils.get_file_path("plan_2026.xlsx")
+    except AttributeError:
+        FULL_PATH = "plan_2026.xlsx"
+        
+except (ImportError, AttributeError):
+    st.warning("⚠️ Archivo `utils.py` no encontrado o incompleto. Usando modo seguro.")
+    api_key = None
+    FULL_PATH = "plan_2026.xlsx" # Fallback local
+    
+    # Definimos clases dummy por si utils no existe para que el PDF no falle
+    class UltimatePDF:
+        def cover_page(self, t, s): pass
+        def add_page(self): pass
+        def section_title(self, t): pass
+        def chapter_body(self, t): pass
+        def output(self, dest): return b''
+        def ln(self, h): pass
+
+# ==========================================
+# 2. ESTILOS CSS PROFESIONALES
+# ==========================================
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-    html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
-    /* Encabezados Azules */
-    h1, h2, h3 { color: #004A8F; font-weight: 700; }
+    html, body, [class*="css"]  { font-family: 'Inter', sans-serif; }
     
-    /* Tarjetas de Métricas (KPIs) */
+    /* Títulos */
+    h1, h2, h3 { color: #0f172a; font-weight: 700; letter-spacing: -0.5px; }
+    h4, h5 { color: #334155; font-weight: 600; }
+    
+    /* Métricas (KPI Cards) */
     div[data-testid="metric-container"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 6px solid #004A8F;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 5px solid #004A8F;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         transition: transform 0.2s;
     }
     div[data-testid="metric-container"]:hover {
-        transform: scale(1.02);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    
-    /* Botones Premium */
-    div.stButton > button {
-        background: linear-gradient(135deg, #004A8F 0%, #002a52 100%);
-        color: white; 
-        font-weight: bold;
-        border-radius: 8px; 
-        border: none;
-        height: 50px;
-        box-shadow: 0 4px 6px rgba(0, 74, 143, 0.3);
-        transition: all 0.3s ease;
-    }
-    div.stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 74, 143, 0.4);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     }
     
-    /* Tablas más limpias */
-    .dataframe { font-size: 12px !important; }
+    /* Tablas */
+    .dataframe { font-size: 13px !important; font-family: 'Inter', sans-serif !important; }
+    
+    /* Botones */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s;
+        background: linear-gradient(135deg, #004A8F 0%, #002a52 100%);
+        color: white;
+        border: none;
+    }
+    .stButton > button:hover {
+        box-shadow: 0 4px 12px rgba(0, 74, 143, 0.3);
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CARGA DE DATOS ROBUSTA
+# 3. FUNCIONES DE IA
 # ==========================================
-# Apuntamos al CSV para velocidad máxima
-DATA_FILE = "plan_2026.xlsx"
-FULL_PATH = utils.get_file_path(DATA_FILE)
+def generar_insight_ia(contexto_data, tipo_analisis):
+    """Genera 3 bullet points de análisis estratégico."""
+    if not api_key:
+        return "⚠️ API Key no configurada. No se puede generar el análisis."
+    
+    try:
+        client = OpenAI(api_key=api_key)
+        prompt_sys = "Eres un analista senior de seguros (Reaseguros/Latam). Sé conciso, directo y estratégico."
+        prompt_user = (
+            f"Analiza los siguientes datos de {tipo_analisis}: \n{contexto_data}\n\n"
+            "Genera ESTRICTAMENTE 3 conclusiones breves (bullet points) enfocadas en:"
+            "1. Oportunidad de crecimiento o riesgo detectado."
+            "2. Anomalía o dato destacado (outlier)."
+            "3. Una recomendación de acción estratégica."
+        )
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": prompt_sys},
+                {"role": "user", "content": prompt_user}
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error IA: {str(e)}"
 
-with st.spinner('🚀 Inicializando Motor de Inteligencia de Negocios...'):
-    # Especifica el nombre de la hoja, por ejemplo "Plan2026"
-    df_final, error = utils.load_plan_accion_procesado(FULL_PATH, sheet_name="plan_2026")
+# ==========================================
+# 4. CARGA Y LIMPIEZA DE DATOS (CORREGIDO)
+# ==========================================
 
-# Manejo de Errores Críticos
-if error:
-    st.error(f"❌ Error Crítico: {error}")
-    st.info("Asegúrate de haber guardado el Excel como 'plan_2026.csv' (Delimitado por comas).")
+def clean_col_name(col):
+    """Normaliza nombres de columnas de forma agresiva."""
+    # 1. Convertir a string y minúsculas y quitar acentos para comparar
+    c = str(col).strip().lower()
+    c = unicodedata.normalize('NFKD', c).encode('ascii', 'ignore').decode('utf-8')
+    
+    # 2. Mapeo directo de variaciones comunes a Nombres Estándar (Title Case)
+    if 'anio' in c or 'ano' in c or 'year' in c: return 'Año'
+    if 'pais' in c or 'country' in c: return 'País'
+    if 'compania' in c or 'empresa' in c: return 'Compañía'
+    if 'ramo' in c or 'producto' in c: return 'Ramo'
+    if 'tipo' in c and 'operacion' in c: return 'Tipo'
+    if 'tipo' in c and len(c) < 6: return 'Tipo'
+    if 'usd' in c or 'valor' in c or 'monto' in c: return 'USD'
+    if 'afiliado' in c: return 'AFILIADO'
+    
+    # Si no coincide con las claves, devolvemos formato Título
+    return col.strip().title()
+
+@st.cache_data(show_spinner=False)
+def load_data():
+    try:
+        # Intentamos usar utils, sino pandas directo
+        if 'utils' in globals() and hasattr(utils, 'load_plan_accion_procesado'):
+            df, error = utils.load_plan_accion_procesado(FULL_PATH, sheet_name="plan_2026")
+        else:
+            df = pd.read_excel(FULL_PATH)
+            error = None
+    except Exception as e:
+        return None, f"Error leyendo archivo: {str(e)}"
+
+    if error: return None, error
+    if df is None or df.empty: return None, "Archivo vacío."
+
+    # 1. Aplicar limpieza de nombres de columnas
+    df.columns = [clean_col_name(c) for c in df.columns]
+
+    # === CORRECCIÓN CRÍTICA: ELIMINAR DUPLICADOS DE COLUMNAS ===
+    # Si 'pais' y 'País' se normalizan ambos a 'País', Pandas crea dos columnas con el mismo nombre.
+    # Melt falla al recibir columnas duplicadas. Esta línea mantiene solo la primera aparición.
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    # 2. Transformación Inteligente (Melt/Unpivot)
+    # Buscamos si existen las columnas de valores por separado (Formato Ancho)
+    cols_posibles_valor = ['Primas', 'Siniestros', 'No Reporta', 'Resultado Tecnico', 'No_Reporta']
+    cols_encontradas = [c for c in df.columns if c in cols_posibles_valor or 'Prima' in c or 'Siniestro' in c]
+    
+    # Si encontramos columnas de valores y NO existe la columna 'Tipo', hacemos melt
+    if len(cols_encontradas) > 0 and 'Tipo' not in df.columns:
+        # Identificadores son todo lo que NO sea valor
+        id_vars = [c for c in df.columns if c not in cols_encontradas]
+        
+        # Validamos que id_vars no esté vacío para evitar errores raros
+        if not id_vars:
+            # Si no hay variables ID, es un archivo raro, pero intentamos procesarlo
+            df['id_temp'] = df.index
+            id_vars = ['id_temp']
+            
+        try:
+            df = df.melt(id_vars=id_vars, value_vars=cols_encontradas, var_name='Tipo', value_name='USD')
+        except Exception as e:
+            return None, f"Error transformando estructura de datos (Melt): {str(e)}"
+    
+    # 3. Limpieza final de valores en la columna 'Tipo' y 'AFILIADO'
+    if 'Tipo' in df.columns:
+        df['Tipo'] = df['Tipo'].astype(str).str.title().str.strip()
+        # Normalizar variaciones de "No Reporta"
+        df['Tipo'] = df['Tipo'].replace({'No_Reporta': 'No Reporta', 'Noreporta': 'No Reporta'})
+    
+    # Asegurar columna AFILIADO
+    if 'AFILIADO' not in df.columns:
+        df['AFILIADO'] = 'NO AFILIADO'
+    
+    df['AFILIADO'] = df['AFILIADO'].fillna('NO AFILIADO').astype(str).str.upper()
+    # Si contiene 'NO', es NO AFILIADO, sino es AFILIADO
+    df.loc[df['AFILIADO'].str.contains('NO', na=False), 'AFILIADO'] = 'NO AFILIADO'
+    df.loc[~df['AFILIADO'].str.contains('NO', na=False), 'AFILIADO'] = 'AFILIADO'
+
+    return df, None
+
+# Carga de datos
+with st.spinner("Cargando Motor de Datos..."):
+    df_final, err = load_data()
+
+if err:
+    st.error(f"❌ Error Fatal: {err}")
     st.stop()
-elif df_final is None or df_final.empty:
-    st.warning("⚠️ El archivo se cargó pero parece estar vacío.")
-    st.stop()
 
 # ==========================================
-# 3. BARRA LATERAL (FILTROS MACRO)
+# 5. BARRA LATERAL (FILTROS)
 # ==========================================
-st.sidebar.image("https://alsum.co/wp-content/uploads/2018/06/Logo-Alsum-Web.png", width=180)
-st.sidebar.markdown("---")
-st.sidebar.header("🌍 Filtros Globales")
+st.sidebar.image("https://alsum.co/wp-content/uploads/2018/06/Logo-Alsum-Web.png", width=160)
+st.sidebar.markdown("### ⚙️ Configuración Global")
 
-# Generación dinámica de filtros basada en columnas disponibles
 df_filtrado = df_final.copy()
 
-# Filtro AÑO
-if 'Año' in df_final.columns:
-    # Solo mostrar los años de estudio
-    anios_estudio = [2022, 2023, 2024, 2025]
-    anios_disp = [a for a in anios_estudio if a in df_final['Año'].unique()]
-    filtro_anios = st.sidebar.multiselect("📅 Año Fiscal", anios_disp, default=anios_disp)
-    # Filtrar el DataFrame solo por esos años
-    df_filtrado = df_filtrado[df_filtrado['Año'].isin(filtro_anios)]
+# --- FILTRO 1: AÑOS ---
+if 'Año' in df_filtrado.columns:
+    # Convertir a numérico para ordenar bien
+    df_filtrado['Año'] = pd.to_numeric(df_filtrado['Año'], errors='coerce')
+    df_filtrado = df_filtrado.dropna(subset=['Año']) # Eliminar filas sin año
+    df_filtrado['Año'] = df_filtrado['Año'].astype(int)
+    
+    # SOLO mostrar años 2022, 2023, 2024
+    anios_disponibles = [a for a in sorted(df_filtrado['Año'].unique()) if a in [2022, 2023, 2024]]
+    
+    if not anios_disponibles:
+        st.error("La columna 'Año' existe pero no tiene datos válidos para 2022, 2023 o 2024.")
+        st.stop()
+        
+    sel_anios = st.sidebar.multiselect("📅 Años Fiscales", anios_disponibles, default=anios_disponibles)
+    
+    if sel_anios:
+        df_filtrado = df_filtrado[df_filtrado['Año'].isin(sel_anios)]
+    else:
+        st.warning("Selecciona al menos un año.")
+        st.stop()
 else:
-    filtro_anios = []
-
-# Filtro PAÍS
-if 'País' in df_final.columns:
-    paises_disp = sorted(df_final['País'].unique())
-    filtro_paises = st.sidebar.multiselect("🌎 País / Región", paises_disp, default=paises_disp)
-    if filtro_paises:
-        df_filtrado = df_filtrado[df_filtrado['País'].isin(filtro_paises)]
-
-# Filtro AFILIACIÓN
-if 'AFILIADO' in df_final.columns:
-    filtro_afiliado = st.sidebar.radio("💎 Estado Afiliación", ["Todos", "Afiliados", "No afiliados"])
-    if filtro_afiliado == "Afiliados":
-        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'AFILIADO']
-    elif filtro_afiliado == "No afiliados":
-        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == 'NO AFILIADO']
-
-# Filtro RAMO (ahora muestra todos los ramos, incluyendo "No reporta")
-if 'Ramo' in df_final.columns:
-    # Excluir portuarios y petroleros (cualquier mayúscula/minúscula)
-    ramos_excluir = ['riesgos portuarios', 'riesgos petroleros']
-    ramos_disp = sorted([
-        r for r in df_final['Ramo'].dropna().unique()
-        if r.strip().lower() not in ramos_excluir
-    ])
-    filtro_ramos = st.sidebar.multiselect("📦 Ramo / Producto", ramos_disp, default=ramos_disp)
-    if filtro_ramos:
-        df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(filtro_ramos)]
-
-# Filtro CATEGORÍA
-if 'Categoria' in df_final.columns:
-    tipos_disp = sorted(df_final['Categoria'].dropna().unique())
-    filtro_tipo = st.sidebar.multiselect("💠 Tipo de Afiliado", tipos_disp, default=tipos_disp)
-    if filtro_tipo:
-        df_filtrado = df_filtrado[df_filtrado['Categoria'].isin(filtro_tipo)]
-
-# ==========================================
-# 4. ÁREA PRINCIPAL
-# ==========================================
-st.title(f"🚀 Dashboard Estratégico {datetime.date.today().year}")
-st.markdown("Visión 360° del desempeño comercial y técnico.")
-
-# Filtros de Profundización (Expander)
-with st.expander("🛠️ Herramientas de Análisis Profundo", expanded=False):
-    c_f1, c_f2 = st.columns([2, 1])
-    with c_f1:
-        if 'Compañía' in df_final.columns:
-            comps = sorted(df_filtrado['Compañía'].unique())
-            sel_comp = st.multiselect("Filtrar por Compañía específica:", comps)
-            if sel_comp:
-                df_filtrado = df_filtrado[df_filtrado['Compañía'].isin(sel_comp)]
-    # Elimina el bloque de métricas
-    # with c_f2:
-    #     metrica_focus = st.selectbox(
-    #         "Métrica para Tablas:",
-    #         ["Primas", "Siniestros", "Resultado Técnico"],
-    #         index=0
-    #     )
-
-# Verificar si quedaron datos después de filtrar
-if df_filtrado.empty:
-    st.warning("⚠️ No hay datos que coincidan con tus filtros. Intenta ampliar la selección.")
+    st.error(f"❌ No se encontró la columna 'Año'. Columnas detectadas: {df_filtrado.columns.tolist()}")
     st.stop()
 
-# --- KPIs GLOBALES (ENCABEZADO) ---
-primas_tot = df_filtrado['Primas'].sum()
-siniestros_tot = df_filtrado['Siniestros'].sum()
-res_tec = df_filtrado['Resultado Técnico'].sum()
-ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
+# --- FILTRO 2: PAÍS ---
+if 'País' in df_filtrado.columns:
+    paises = sorted(df_filtrado['País'].astype(str).unique())
+    sel_pais = st.sidebar.multiselect("🌎 Países", paises, default=paises)
+    if sel_pais:
+        df_filtrado = df_filtrado[df_filtrado['País'].isin(sel_pais)]
 
-# NUEVO: Suma de "No reporta"
-primas_no_reporta = df_filtrado[df_filtrado['Ramo'].str.lower() == 'no reporta']['Primas'].sum() if 'Ramo' in df_filtrado.columns else 0
+# --- FILTRO 3: RAMO ---
+if 'Ramo' in df_filtrado.columns:
+    # Excluye los ramos no deseados
+    ramos = sorted(df_filtrado['Ramo'].astype(str).unique())
+    ramos_filtrados = [r for r in ramos if r not in ["Riesgos petroleros", "Riesgos portuarios"]]
+    sel_ramos = st.sidebar.multiselect("📦 Ramo / Producto", ramos_filtrados, default=ramos_filtrados)
+    if sel_ramos:
+        df_filtrado = df_filtrado[df_filtrado['Ramo'].isin(sel_ramos)]
 
-# === BLOQUE DE KPIs Y PARTICIPACIÓN POR TIPO (PRIMAS, SINIESTROS, NO REPORTA) ===
+# --- FILTRO 4: AFILIADO ---
+if 'AFILIADO' in df_filtrado.columns:
+    opciones_afiliado = ["Todos", "AFILIADO", "NO AFILIADO"]
+    sel_afiliado = st.sidebar.selectbox("🔗 Estado de Afiliación", opciones_afiliado, index=0)
+    if sel_afiliado != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['AFILIADO'] == sel_afiliado]
 
-# 1. Separar los registros por Tipo (si existe la columna)
-if 'Tipo' in df_filtrado.columns:
-    df_primas = df_filtrado[df_filtrado['Tipo'].str.lower() == 'primas']
-    df_siniestros = df_filtrado[df_filtrado['Tipo'].str.lower() == 'siniestros']
-    df_no_reporta = df_filtrado[df_filtrado['Tipo'].str.lower() == 'no reporta']
-else:
-    df_primas = df_filtrado.copy()
-    df_siniestros = pd.DataFrame()
-    df_no_reporta = pd.DataFrame()
-
-# 2. Sumar cada KPI por separado (soporta tanto 'USD' como 'Primas'/'Siniestros')
-def suma_col(df, colnames):
-    for col in colnames:
-        if col in df.columns:
-            return df[col].sum()
-    return 0
-
-primas_tot = suma_col(df_primas, ['USD', 'Primas'])
-siniestros_tot = suma_col(df_siniestros, ['USD', 'Siniestros'])
-no_reporta_tot = suma_col(df_no_reporta, ['USD', 'Primas', 'Siniestros'])
-
-# 3. Resultado Técnico y Siniestralidad
-res_tec = primas_tot - siniestros_tot
-ratio_global = (siniestros_tot / primas_tot * 100) if primas_tot > 0 else 0.0
-
-# 4. KPIs en pantalla
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("💰 Primas Totales", f"${primas_tot:,.0f}")
-k2.metric("🔥 Siniestros Totales", f"${siniestros_tot:,.0f}")
-k3.metric("📉 Siniestralidad", f"{ratio_global:.1f}%")
-k4.metric("No Reporta", f"${no_reporta_tot:,.0f}")
-
-st.markdown("---")
-
-# 5. Ranking de compañías por tipo (Primas, Siniestros, No reporta)
-if 'Compañía' in df_filtrado.columns and 'Tipo' in df_filtrado.columns:
-    ranking = df_filtrado.copy()
-    # Soporta tanto USD como Primas/Siniestros
-    valor_col = 'USD' if 'USD' in ranking.columns else 'Primas'
-    ranking_sum = ranking.groupby(['Compañía', 'Tipo'])[valor_col].sum().reset_index()
-    ranking_pivot = ranking_sum.pivot(index='Compañía', columns='Tipo', values=valor_col).fillna(0)
-    # Calcula resultado técnico si existen ambas columnas
-    if 'Primas' in ranking_pivot.columns and 'Siniestros' in ranking_pivot.columns:
-        ranking_pivot['Resultado Técnico'] = ranking_pivot['Primas'] - ranking_pivot['Siniestros']
-    ranking_pivot = ranking_pivot.reset_index()
-    st.dataframe(ranking_pivot, use_container_width=True)
-else:
-    st.dataframe(df_filtrado, use_container_width=True)
-
-# 6. Gráfica de participación por tipo
-if 'Tipo' in df_filtrado.columns:
-    valor_col = 'USD' if 'USD' in df_filtrado.columns else 'Primas'
-    tipo_part = df_filtrado.groupby('Tipo')[valor_col].sum().reset_index()
-    fig_tipo = px.pie(
-        tipo_part,
-        names='Tipo',
-        values=valor_col,
-        title="Participación por Tipo (Primas, Siniestros, No reporta)"
+# --- FILTRO 5: COMPAÑÍA ---
+if 'Compañía' in df_filtrado.columns:
+    companias = sorted(df_filtrado['Compañía'].astype(str).unique())
+    opciones_companias = ["Todas"] + companias
+    # Si ya hay selección previa, manténla; si no, selecciona "Todas" por defecto
+    sel_companias = st.sidebar.multiselect(
+        "🏢 Compañía", 
+        opciones_companias, 
+        default=["Todas"] if len(companias) > 1 else companias
     )
-    st.plotly_chart(fig_tipo, use_container_width=True)
+    # Si "Todas" está seleccionada, usa todas las compañías
+    if "Todas" in sel_companias or not sel_companias:
+        sel_companias = companias
+    else:
+        # Si no, usa solo las seleccionadas (sin "Todas")
+        sel_companias = [c for c in sel_companias if c in companias]
+    # Aplica el filtro
+    if sel_companias:
+        df_filtrado = df_filtrado[df_filtrado['Compañía'].isin(sel_companias)]
 
-st.markdown("---")
+st.sidebar.markdown("---")
 
 # ==========================================
-# 5. PESTAÑAS DETALLADAS
+# 6. LÓGICA DE NEGOCIO (KPIS)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🗺️ Mapa & Territorio", 
-    "📦 Productos (Ramos)", 
-    "🤖 Generador IA (PDF)", 
-    "🔬 Profundización (Data)"
+# Aseguramos que la columna USD sea numérica
+col_valor = 'USD'
+if col_valor not in df_filtrado.columns:
+    st.error("No se encontró columna de valor (USD).")
+    st.stop()
+
+df_filtrado[col_valor] = pd.to_numeric(df_filtrado[col_valor], errors='coerce').fillna(0)
+
+# Separación de datos usando 'Tipo'
+df_primas = df_filtrado[df_filtrado['Tipo'].str.contains('Prima', case=False, na=False)]
+df_siniestros = df_filtrado[df_filtrado['Tipo'].str.contains('Siniestro', case=False, na=False)]
+df_noreporta = df_filtrado[df_filtrado['Tipo'].str.contains('No Reporta', case=False, na=False)]
+
+total_primas = df_primas[col_valor].sum()
+total_siniestros = df_siniestros[col_valor].sum()
+total_noreporta = df_noreporta[col_valor].sum()
+
+# Cálculo robusto de "No Reporta"
+if 'No Reporta' in df_filtrado.columns:
+    total_noreporta = df_filtrado['No Reporta'].sum()
+elif 'Tipo' in df_filtrado.columns and col_valor in df_filtrado.columns:
+    total_noreporta = df_filtrado[df_filtrado['Tipo'].str.contains('No Reporta', case=False, na=False)][col_valor].sum()
+else:
+    total_noreporta = 0
+
+# Cálculo de Siniestralidad Global
+siniestralidad_global = (total_siniestros / total_primas * 100) if total_primas > 0 else 0
+
+st.title(f"🚀 Dashboard Estratégico {max(sel_anios) if sel_anios else ''}")
+st.markdown("Visión consolidada del desempeño del mercado asegurador.")
+
+# KPIs Cards
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 Primas Confirmadas", f"${total_primas:,.0f}")
+col2.metric("🔥 Siniestros Confirmados", f"${total_siniestros:,.0f}")
+col3.metric("📉 % Siniestralidad", f"{siniestralidad_global:.1f}%", 
+            delta="Saludable" if siniestralidad_global < 60 else "Atención", delta_color="inverse")
+col4.metric("⚠️ Data No Reportada (Riesgo)", f"${total_noreporta:,.0f}", delta="Incertidumbre", delta_color="off")
+
+st.divider()
+
+# ==========================================
+# 8. PESTAÑAS DETALLADAS
+# ==========================================
+tab2, tab1, tab3, tab4 = st.tabs([
+    "📦 Mapa & Territorio",
+    "🗺️ Productos (Ramos)", 
+    "📝 Generador PDF IA", 
+    "🔬 Data Lab"
 ])
 
-# === TAB 1: GEOGRÁFICO ===
-with tab1:
-    st.subheader("Análisis de Mercados")
+# === TAB 2: GEOGRAFÍA ===
+with tab2:
+    st.subheader("Territorio y Rentabilidad")
     
-    # Preparar datos
-    pais_df = df_filtrado.groupby('País')[['Primas', 'Siniestros']].sum().reset_index()
-    pais_df['Siniestralidad'] = (pais_df['Siniestros'] / pais_df['Primas'] * 100).fillna(0)
-    # Antes de graficar, asegúrate que 'Primas' sea >= 0
-    pais_df['Primas_plot'] = pais_df['Primas'].abs()
-    
-    c1, c2 = st.columns([2, 1])
-    
-    with c1:
-        # Gráfico de Burbujas (Scatter)
+    if 'País' in df_filtrado.columns:
+        pais_stats = df_filtrado.groupby(['País', 'Tipo'])[col_valor].sum().unstack(fill_value=0).reset_index()
+        
+        # Lógica de columnas segura
+        cols_p = pais_stats.columns.tolist()
+        def get_val(k, r): return r[[c for c in cols_p if k.lower() in str(c).lower()]].sum() if any(k.lower() in str(c).lower() for c in cols_p) else 0
+
+        pais_stats['Primas'] = pais_stats.apply(lambda x: get_val('Prima', x), axis=1)
+        pais_stats['Siniestros'] = pais_stats.apply(lambda x: get_val('Siniestro', x), axis=1)
+        
+        pais_stats['Siniestralidad'] = (pais_stats['Siniestros'] / pais_stats['Primas'] * 100).fillna(0)
+        
         fig_map = px.scatter(
-            pais_df, 
-            x='Primas', 
-            y='Siniestralidad',
-            size='Primas_plot',  # Usar la columna corregida
-            color='País',
-            hover_name='País',
-            title="Matriz de Desempeño: Volumen vs Rentabilidad",
-            labels={'Primas': 'Volumen de Primas (USD)', 'Siniestralidad': '% Siniestralidad'}
+            pais_stats,
+            x='Primas', y='Siniestralidad',
+            size='Primas', color='País',
+            hover_name='País', text='País',
+            title="Matriz de Rentabilidad País",
+            labels={'Primas': 'Volumen (USD)', 'Siniestralidad': 'Siniestralidad (%)'}
         )
-        # Línea de referencia del 65%
-        fig_map.add_hline(y=65, line_dash="dash", line_color="red", annotation_text="Límite Rentable (65%)")
+        fig_map.add_hline(y=60, line_dash="dash", line_color="red", annotation_text="Límite 60%")
+        fig_map.update_traces(textposition='top center')
         st.plotly_chart(fig_map, use_container_width=True)
         
-    with c2:
-        st.markdown("### Top Mercados")
-        # Tabla estilizada
-        st.dataframe(
-            pais_df.sort_values('Primas', ascending=False)
-            .style.format({'Primas': '${:,.0f}', 'Siniestros': '${:,.0f}', 'Siniestralidad': '{:.1f}%'})
-            .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r', vmin=40, vmax=100),
-            use_container_width=True,
-            hide_index=True
-        )
+        if st.button("🤖 Analizar Geografía con IA"):
+            st.markdown(generar_insight_ia(pais_stats.to_string(), "Desempeño por País"))
 
-    st.markdown("### 🏆 Ranking de Compañías")
-
-    # Agrupar y mostrar todas las columnas relevantes
-    pivot_comp = df_normales.groupby(['Compañía', 'País']).agg({
-        'Primas': 'sum',
-        'Siniestros': 'sum',
-        'Resultado Técnico': 'sum'
-    }).reset_index()
-    pivot_comp['Siniestralidad'] = (pivot_comp['Siniestros'] / pivot_comp['Primas'] * 100).fillna(0)
-    pivot_comp['Compañía'] = pivot_comp['Compañía'].astype(str).str.upper().str.strip()
-
-    # Suma de "No reporta" por compañía
-    if not df_no_reporta.empty:
-        no_reporta_sum = df_no_reporta.groupby(['Compañía', 'País'])[['USD', 'Primas', 'Siniestros']].sum().sum(axis=1).reset_index(name='No reporta')
-        pivot_comp = pd.merge(pivot_comp, no_reporta_sum, on=['Compañía', 'País'], how='left')
-        pivot_comp['No reporta'] = pivot_comp['No reporta'].fillna(0)
-    else:
-        pivot_comp['No reporta'] = 0
-
-    # Formateo dinámico de columnas numéricas
-    st.dataframe(
-        pivot_comp.sort_values('Primas', ascending=False).style
-            .format({
-                'Primas': '${:,.0f}',
-                'Siniestros': '${:,.0f}',
-                'Resultado Técnico': '${:,.0f}',
-                'Siniestralidad': '{:,.0f}%',
-                'No reporta': '${:,.0f}'
-            }),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # Ejemplo debajo de la gráfica de burbujas en TAB 1
-    contexto = pais_df.head(10).to_string()
-    prompt = "Analiza la gráfica de matriz de desempeño de países."
-    analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
-    st.info(analisis)
-
-    # Ejemplo debajo de la tabla de compañías
-    contexto = pivot_comp.head(10).to_string()
-    prompt = "Analiza la tabla de ranking de compañías."
-    analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
-    st.info(analisis)
-
-# === TAB 2: PRODUCTOS ===
-with tab2:
-    st.subheader("Desempeño por Ramo de Negocio")
+# === TAB 1: PRODUCTOS ===
+with tab1:
+    st.subheader("Análisis de Portafolio y Participación")
+    col_prod_1, col_prod_2 = st.columns([2, 1])
     
-    ramo_df = df_filtrado.groupby('Ramo')[['Primas', 'Siniestros']].sum().reset_index()
-    ramo_df['Ratio'] = (ramo_df['Siniestros'] / ramo_df['Primas'] * 100).fillna(0)
+    if 'Ramo' in df_filtrado.columns:
+        # Pivotar por Ramo
+        ramo_stats = df_filtrado.groupby(['Ramo', 'Tipo'])[col_valor].sum().unstack(fill_value=0).reset_index()
+        
+        # Normalización de nombres de columnas del pivot
+        cols_pivot = ramo_stats.columns.tolist()
+        def get_col_val(keyword, df_row):
+            matches = [c for c in cols_pivot if keyword.lower() in str(c).lower()]
+            return df_row[matches].sum() if matches else 0
+
+        ramo_stats['Primas'] = ramo_stats.apply(lambda x: get_col_val('Prima', x), axis=1)
+        ramo_stats['Siniestros'] = ramo_stats.apply(lambda x: get_col_val('Siniestro', x), axis=1)
+        ramo_stats['No Reporta'] = ramo_stats.apply(lambda x: get_col_val('No Reporta', x), axis=1)
+        
+        ramo_stats['Siniestralidad'] = (ramo_stats['Siniestros'] / ramo_stats['Primas'] * 100).fillna(0)
+        
+        # Colores Semáforo
+        def get_color(ratio):
+            if ratio < 50: return '#10B981' # Verde
+            elif ratio < 75: return '#F59E0B' # Amarillo
+            else: return '#EF4444' # Rojo
+            
+        ramo_stats['Color'] = ramo_stats['Siniestralidad'].apply(get_color)
+        ramo_stats = ramo_stats.sort_values('Primas', ascending=False)
+        
+        with col_prod_1:
+            st.markdown("**🚥 Desempeño por Ramo (Color = Siniestralidad)**")
+            fig_bar = go.Figure()
+            
+            fig_bar.add_trace(go.Bar(
+                x=ramo_stats['Ramo'], y=ramo_stats['Primas'],
+                name='Primas', marker_color=ramo_stats['Color'],
+                text=ramo_stats['Siniestralidad'].apply(lambda x: f"{x:.1f}%"),
+                textposition='auto'
+            ))
+            fig_bar.add_trace(go.Bar(
+                x=ramo_stats['Ramo'], y=ramo_stats['No Reporta'],
+                name='No Reporta', marker_color='#94A3B8'
+            ))
+            fig_bar.update_layout(barmode='stack', xaxis_tickangle=-45, legend=dict(orientation="h", y=1.1))
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        with col_prod_2:
+            st.markdown("**📋 Detalle Numérico**")
+            st.dataframe(
+                ramo_stats[['Ramo', 'Primas', 'Siniestralidad']].style
+                .format({'Primas': '${:,.0f}', 'Siniestralidad': '{:.1f}%'})
+                .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r'),
+                use_container_width=True, height=400
+            )
     
-    # Gráfico de Barras con color por Siniestralidad
-    fig_bar = px.bar(
-        ramo_df.sort_values('Primas', ascending=False),
-        x='Ramo',
-        y='Primas',
-        color='Ratio',
-        color_continuous_scale='RdYlGn_r',
-        title="Volumen por Ramo (Color = Siniestralidad)",
-        text_auto='.2s'
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.divider()
     
-    st.markdown("#### Detalle Anual por Ramo")
-    pivot_ramo = utils.crear_vista_pivot_anos(df_filtrado, 'Ramo', valor='Primas')
-    st.dataframe(
-    pivot_ramo.style.format({
-        col: '${:,.0f}' if 'TOTAL' in col or 'Primas' in col or 'Siniestros' in col else '{:,.0f}%'
-        for col in pivot_ramo.columns if col != 'Ramo'
-    }),
-    use_container_width=True
+    # Market Share
+    if 'AFILIADO' in df_primas.columns:
+        ms_col1, ms_col2 = st.columns(2)
+        share_vol = df_primas.groupby('AFILIADO')[col_valor].sum().reset_index()
+        share_count = df_primas.groupby('AFILIADO')['Compañía'].nunique().reset_index()
+        share_count.columns = ['AFILIADO', 'Empresas']
+        
+        colores_share = {'AFILIADO': '#004A8F', 'NO AFILIADO': '#CBD5E1'}
+        
+        with ms_col1:
+            st.markdown("**Participación por Volumen (USD)**")
+            fig_vol = px.pie(share_vol, values=col_valor, names='AFILIADO', 
+                             color='AFILIADO', color_discrete_map=colores_share, hole=0.6)
+            st.plotly_chart(fig_vol, use_container_width=True)
+            
+        with ms_col2:
+            st.markdown("**Participación por # de Empresas**")
+            fig_count = px.pie(share_count, values='Empresas', names='AFILIADO', 
+                               color='AFILIADO', color_discrete_map=colores_share, hole=0.6)
+            st.plotly_chart(fig_count, use_container_width=True)
+
+# --- A. GRÁFICA DE TORTA ---
+c_chart, c_text = st.columns([2, 1])
+
+with c_chart:
+    st.subheader("📊 Distribución de Flujos")
+    data_pie = pd.DataFrame({
+        'Categoría': ['Primas', 'Siniestros', 'No Reporta'],
+        'Valor': [total_primas, total_siniestros, total_noreporta]
+    })
+    
+    fig_pie = px.pie(
+        data_pie, values='Valor', names='Categoría',
+        color='Categoría',
+        color_discrete_map={'Primas': '#004A8F', 'Siniestros': '#DC2626', 'No Reporta': '#F59E0B'},
+        hole=0.5
     )
+    fig_pie.update_traces(textinfo='percent+label', textfont_size=14)
+    st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- Participación de Afiliados vs No Afiliados vs No reporta ---
-    if 'AFILIADO' in df_normales.columns and 'Primas' in df_normales.columns:
-        total_primas = df_normales['Primas'].sum()
-        afiliados = df_normales[df_normales['AFILIADO'] == 'AFILIADO']['Primas'].sum()
-        no_afiliados = df_normales[df_normales['AFILIADO'] == 'NO AFILIADO']['Primas'].sum()
-        # Primas "No reporta" (de los registros no reporta)
-        no_reporta_afiliados = df_no_reporta['USD'].sum() if 'USD' in df_no_reporta.columns else 0
-        labels = ['Afiliados', 'No Afiliados', 'No reporta']
-        values = [afiliados, no_afiliados, no_reporta_afiliados]
-        fig_pie = px.pie(
-            names=labels,
-            values=values,
-            title="Participación de Primas: Afiliados vs No Afiliados vs No reporta",
-            color=labels,
-            color_discrete_map={'Afiliados': '#004A8F', 'No Afiliados': '#B0B0B0', 'No reporta': '#FFB347'}
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
-        st.info(f"**Afiliados:** {afiliados/total_primas:.1%} | **No Afiliados:** {no_afiliados/total_primas:.1%} | **No reporta:** {no_reporta_afiliados/(total_primas+no_reporta_afiliados):.1%}")
-    else:
-        st.warning("No se encontraron columnas 'AFILIADO' y 'Primas' para calcular la participación.")
+with c_text:
+    st.info("💡 **Análisis Rápido:** La proporción de 'No Reporta' indica el nivel de opacidad del mercado seleccionado.")
+    if st.button("🤖 Analizar KPI Global con IA", key="btn_ia_global"):
+        with st.spinner("Consultando estrategia..."):
+            contexto = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}"
+            insight = generar_insight_ia(contexto, "KPIs Globales")
+            st.success("Análisis Generado:")
+            st.markdown(insight)
 
-    # --- Participación por Tipo de Afiliado (Miembro/Asociado) ---
-    if 'Categoria' in df_filtrado.columns and 'Primas' in df_filtrado.columns:
-        tipo_part = df_filtrado.groupby('Categoria')['Primas'].sum().reset_index()
-        fig_tipo = px.pie(
-            tipo_part,
-            names='Categoria',
-            values='Primas',
-            title="Participación por Tipo de Afiliado (Miembro/Asociado)",
-            color='Categoria'
-        )
-        st.plotly_chart(fig_tipo, use_container_width=True)
+st.markdown("---")
 
-        # Ejemplo debajo de la gráfica de participación por tipo de afiliado
-        contexto = tipo_part.head(10).to_string()
-        prompt = "Analiza la gráfica de participación por tipo de afiliado."
-        analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
-        st.info(analisis)
-
-# === TAB 3: GENERADOR PDF IA ===
+# === TAB 3: GENERADOR PDF ===
 with tab3:
-    st.header("🧠 Inteligencia Artificial - Generador de Informes")
-    st.info("Este módulo utiliza GPT-4 para redactar un análisis estratégico basado en los datos filtrados y genera un PDF oficial.")
+    st.subheader("📝 Generación de Informe Ejecutivo (PDF)")
+    col_pdf_1, col_pdf_2 = st.columns([3, 1])
     
-    col_ia_1, col_ia_2 = st.columns([3, 1])
-    with col_ia_1:
-        foco_ia = st.text_area("🎯 Instrucción para la IA:", height=100, 
-                             placeholder="Ej: Enfocarse en el crecimiento excepcional de México y proponer estrategias para reducir la siniestralidad en Autos...")
-    with col_ia_2:
-        st.write("") # Espacio
+    with col_pdf_1:
+        instruccion = st.text_area("Instrucciones específicas:", "Enfocarse en la alta siniestralidad y riesgos ocultos.")
+    
+    with col_pdf_2:
+        st.write("") 
         st.write("")
-        btn_generar = st.button("✨ GENERAR INFORME PDF", type="primary")
-
-    if btn_generar:
-        api_key = utils.get_api_key()
-        if not api_key:
-            st.error("⚠️ No se detectó la API KEY de OpenAI en secretos o variables de entorno.")
-        else:
-            with st.status("🤖 Procesando Estrategia...", expanded=True) as status:
-                try:
-                    # 1. Preparar Contexto
-                    status.write("Analizando datos del dashboard...")
-                    top_paises = pais_df.sort_values('Primas', ascending=False).head(3)['País'].tolist()
-                    contexto = (
-                        f"Resumen Ejecutivo ALSUM 2026. "
-                        f"Primas Totales: USD {primas_tot:,.0f}. "
-                        f"Siniestralidad Global: {ratio_global:.1f}%. "
-                        f"Resultado Técnico: USD {res_tec:,.0f}. "
-                        f"Top Mercados: {', '.join(top_paises)}. "
-                        f"Instrucción del usuario: {foco_ia}"
-                    )
-                    
-                    # 2. Llamar a OpenAI
-                    status.write("Consultando a GPT-4...")
-                    client = OpenAI(api_key=api_key)
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini", # Modelo rápido y eficiente
-                        messages=[
-                            {"role": "system", "content": "Eres un consultor experto en seguros y reaseguros."},
-                            {"role": "user", "content": f"Escribe un informe estratégico ejecutivo de 3 párrafos y 3 bullet points de acción basado en: {contexto}"}
-                        ]
-                    )
-                    texto_ia = response.choices[0].message.content
-                    
-                    # 3. Generar PDF
-                    status.write("Maquetando PDF Profesional...")
+        btn_pdf = st.button("📄 GENERAR PDF", type="primary", use_container_width=True)
+    
+    if btn_pdf:
+        with st.status("🛠️ Construyendo informe...", expanded=True):
+            st.write("Analizando datos globales...")
+            resumen_data = f"Total Primas: {total_primas}, Siniestralidad: {siniestralidad_global}%."
+            texto_ia = generar_insight_ia(resumen_data + " " + instruccion, "Resumen Ejecutivo PDF")
+            
+            try:
+                st.write("Maquetando documento...")
+                # Verificamos si utils.UltimatePDF existe (importado al inicio)
+                if 'UltimatePDF' in dir(utils):
                     pdf = utils.UltimatePDF()
-                    pdf.cover_page("PLAN ESTRATÉGICO 2026", "INFORME DE INTELIGENCIA DE MERCADO")
-                    pdf.add_page()
-                    pdf.section_title("1. RESUMEN DE KPIs")
-                    
-                    # Cajas de métricas en el PDF (simuladas con texto)
-                    pdf.chapter_body(f"PRIMAS: USD {primas_tot:,.0f} | RATIO: {ratio_global:.1f}%")
-                    pdf.ln(10)
-                    
-                    pdf.section_title("2. DIAGNÓSTICO ESTRATÉGICO (IA)")
-                    pdf.chapter_body(texto_ia)
-                    
-                    # Convertir a bytes
-                    pdf_bytes = bytes(pdf.output(dest='S'))
-                    
-                    status.update(label="✅ ¡Informe Listo!", state="complete", expanded=False)
-                    
-                    # Botón de Descarga
-                    st.download_button(
-                        label="📥 DESCARGAR PDF FINAL",
-                        data=pdf_bytes,
-                        file_name="Estrategia_ALSUM_2026.pdf",
-                        mime="application/pdf",
-                        type="primary"
-                    )
-                    
-                except Exception as e:
-                    st.error(f"Error durante la generación: {str(e)}")
+                else:
+                    # Fallback si no está la clase en utils pero el archivo cargó
+                    class PDF_Dummy:
+                        def cover_page(self, t, s): pass
+                        def add_page(self): pass
+                        def section_title(self, t): pass
+                        def chapter_body(self, t): pass
+                        def output(self, dest): return b'PDF SIMULADO'
+                    pdf = PDF_Dummy()
 
-# === TAB 4: PROFUNDIZACIÓN ===
+                pdf.cover_page("INFORME ESTRATÉGICO 2026", "ALSUM INTELLIGENCE")
+                pdf.add_page()
+                pdf.section_title("HALLAZGOS CLAVE")
+                pdf.chapter_body(texto_ia)
+                
+                pdf_bytes = bytes(pdf.output(dest='S'))
+                st.write("✅ ¡Hecho!")
+                st.download_button("📥 Descargar PDF", data=pdf_bytes, file_name="Reporte_ALSUM.pdf", mime="application/pdf")
+            except Exception as e:
+                st.error(f"Error generando PDF: {e}")
+
+# === TAB 4: DATA LAB ===
 with tab4:
-    st.subheader("🔬 Data Lab")
+    st.subheader("🔬 Laboratorio de Datos")
+    with st.expander("Ver Dataframe Completo", expanded=True):
+        st.dataframe(df_filtrado, use_container_width=True)
     
-    # Análisis de Dispersión
-    comp_scatter = df_filtrado.groupby('Compañía')[['Primas', 'Siniestros']].sum().reset_index()
-    # Filtramos compañías muy pequeñas para limpiar el gráfico
-    comp_scatter = comp_scatter[comp_scatter['Primas'] > comp_scatter['Primas'].mean() * 0.1]
+    csv = df_filtrado.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Descargar CSV Filtrado", data=csv, file_name="data_filtrada.csv", mime="text/csv")
+
+    # ==========================================
+# 7. VISUALIZACIÓN PRINCIPAL (HOME)
+# ==========================================
+
+# --- B. RANKING DE COMPAÑÍAS ---
+st.subheader("🏆 Ranking de Compañías")
+st.markdown("Desempeño consolidado ordenado por volumen de Primas.")
+
+if 'Compañía' in df_filtrado.columns:
+    # Agrupar datos para el ranking
+    df_rank = df_filtrado.groupby(['Compañía', 'Tipo'])[col_valor].sum().unstack(fill_value=0).reset_index()
     
-    c_d1, c_d2 = st.columns([3, 1])
-    with c_d1:
-        fig_deep = px.scatter(
-            comp_scatter, 
-            x="Primas", 
-            y="Siniestros", 
-            hover_name="Compañía", 
-            trendline="ols", # Línea de tendencia
-            title="Correlación Primas vs Siniestros (Detección de Anomalías)",
-            color_discrete_sequence=["#004A8F"]
-        )
-        st.plotly_chart(fig_deep, use_container_width=True)
-        
-    with c_d2:
-        st.markdown("**🚨 Top Riesgos (Siniestros Altos)**")
-        st.dataframe(
-            comp_scatter.sort_values("Siniestros", ascending=False).head(10)
-            .style.format({'Siniestros': '${:,.0f}', 'Primas': '${:,.0f}'}),
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        # Ejemplo debajo de la tabla de top riesgos
-        contexto = comp_scatter.sort_values("Siniestros", ascending=False).head(10).to_string()
-        prompt = "Analiza la tabla de top riesgos por siniestros altos."
-        analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
-        st.info(analisis)
-        
-    st.markdown("### Tabla de Datos Completa")
+    # Asegurar columnas aunque falten datos
+    for col in ['Primas', 'Siniestros', 'No Reporta']:
+        # Buscamos columnas que contengan la palabra clave
+        matches = [c for c in df_rank.columns if col.lower() in str(c).lower()]
+        if matches:
+            # Si hay multiple matches (ej No Reporta), sumamos, sino tomamos la que es
+            if len(matches) > 1:
+                df_rank[col] = df_rank[matches].sum(axis=1)
+            else:
+                df_rank[col] = df_rank[matches[0]]
+        else:
+            df_rank[col] = 0
+            
+    # Cálculos finales
+    df_rank['Siniestralidad'] = (df_rank['Siniestros'] / df_rank['Primas'] * 100).fillna(0)
+    df_rank['Resultado'] = df_rank['Primas'] - df_rank['Siniestros']
+    
+    # Ordenar y mostrar
+    df_rank = df_rank.sort_values('Primas', ascending=False)
+    
     st.dataframe(
-    df_filtrado.style.format({
-        col: '${:,.0f}' for col in df_filtrado.select_dtypes(include='number').columns
-    }),
-    use_container_width=True
-)
+        df_rank[['Compañía', 'Primas', 'Siniestros', 'Siniestralidad', 'No Reporta', 'Resultado']].style
+        .format({
+            'Primas': '${:,.0f}', 'Siniestros': '${:,.0f}', 
+            'No Reporta': '${:,.0f}', 'Resultado': '${:,.0f}',
+            'Siniestralidad': '{:.1f}%'
+        })
+        .background_gradient(subset=['Siniestralidad'], cmap='RdYlGn_r', vmin=0, vmax=100)
+        .bar(subset=['Primas'], color='#e0f2fe'),
+        use_container_width=True,
+        height=400
+    )
+    
+    with st.expander("🤖 Ver Análisis IA del Ranking"):
+        if st.button("Generar Análisis Ranking"):
+             top_3 = df_rank.head(3).to_string()
+             worst_sin = df_rank.sort_values('Siniestralidad', ascending=False).head(3).to_string()
+             res = generar_insight_ia(f"Top 3 Vol:\n{top_3}\nTop 3 Siniestralidad:\n{worst_sin}", "Ranking Empresas")
+             st.markdown(res)
 
-st.markdown("### 🌎 Empresas por País")
+# --- ANÁLISIS POR EMPRESA Y PAÍS ---
+if 'Compañía' in df_filtrado.columns and sel_companias:
+    df_empresa = df_final[df_final['Compañía'].isin(sel_companias)]
+    # Aplica los mismos filtros de año, país, ramo y afiliado al df_empresa
+    if 'Año' in df_empresa.columns and sel_anios:
+        df_empresa = df_empresa[df_empresa['Año'].isin(sel_anios)]
+    if 'País' in df_empresa.columns and sel_pais:
+        df_empresa = df_empresa[df_empresa['País'].isin(sel_pais)]
+    if 'Ramo' in df_empresa.columns and sel_ramos:
+        df_empresa = df_empresa[df_empresa['Ramo'].isin(sel_ramos)]
+    if 'AFILIADO' in df_empresa.columns and sel_afiliado != "Todos":
+        df_empresa = df_empresa[df_empresa['AFILIADO'] == sel_afiliado]
 
-empresas_por_pais = df_filtrado.groupby('País')['Compañía'].nunique().reset_index()
-empresas_por_pais.columns = ['País', 'Empresas']
-
-st.dataframe(
-    empresas_por_pais.sort_values('Empresas', ascending=False)
-    .style.format({'Empresas': '{:,.0f}'}),
-    use_container_width=True,
-    hide_index=True
-)
-
-contexto = empresas_por_pais.head(10).to_string()
-prompt = "Analiza la tabla de empresas por país."
-analisis = utils.analisis_ia_3_puntos(api_key, prompt, contexto)
-st.info(analisis)
+    resumen = (
+        df_empresa.groupby(['Compañía', 'País', 'AFILIADO', 'Tipo'])['USD']
+        .sum()
+        .reset_index()
+        .pivot_table(index=['Compañía', 'País', 'AFILIADO'], columns='Tipo', values='USD', fill_value=0)
+        .reset_index()
+    )
+    # Asegura columnas aunque falten datos
+    for col in ['Primas', 'Siniestros', 'No Reporta']:
+        if col not in resumen.columns:
+            resumen[col] = 0
+    resumen['Siniestralidad %'] = (resumen['Siniestros'] / resumen['Primas'] * 100).fillna(0)
+    st.dataframe(
+        resumen[['Compañía', 'País', 'AFILIADO', 'Primas', 'Siniestros', 'No Reporta', 'Siniestralidad %']].style
+        .format({'Primas': '${:,.0f}', 'Siniestros': '${:,.0f}', 'No Reporta': '${:,.0f}', 'Siniestralidad %': '{:.1f}%'}),
+        use_container_width=True
+    )
