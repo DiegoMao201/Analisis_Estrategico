@@ -123,11 +123,20 @@ class UltimatePDF(FPDF):
         if not data:
             self.cell(0, 10, "Sin datos disponibles.", 0, 1)
             return
+        n_cols = len(data[0])
+        min_width = 20
         if not col_widths:
-            col_widths = [180 // len(data[0])] * len(data[0])
+            # Asegura un ancho mínimo por columna
+            col_width = max(min_width, int(180 / n_cols))
+            col_widths = [col_width] * n_cols
         for row in data:
             for i, datum in enumerate(row):
-                self.cell(col_widths[i], 8, str(datum), border=1, align=align)
+                # Trunca el texto si es demasiado largo para la celda
+                text = str(datum)
+                max_chars = int(col_widths[i] / 3)  # Aproximado
+                if len(text) > max_chars:
+                    text = text[:max_chars - 3] + "..."
+                self.cell(col_widths[i], 8, text, border=1, align=align)
             self.ln(8)
         self.ln(4)
 
