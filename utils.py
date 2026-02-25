@@ -29,9 +29,17 @@ def get_api_key():
 # 2. MOTOR PDF
 # ==========================================
 class UltimatePDF(FPDF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Agrega la fuente Unicode (asegúrate de tener fonts/DejaVuSans.ttf)
+        self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
+        self.add_font('DejaVu', 'B', 'fonts/DejaVuSans.ttf', uni=True)
+        self.add_font('DejaVu', 'I', 'fonts/DejaVuSans.ttf', uni=True)
+        self.set_font('DejaVu', '', 11)
+
     def header(self):
         if self.page_no() > 1:
-            self.set_font('Arial', 'B', 9)
+            self.set_font('DejaVu', 'B', 9)
             self.set_text_color(128, 128, 128)
             self.cell(0, 10, 'ALSUM - ESTRATEGIA 2026', 0, 0, 'L')
             self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, 'R')
@@ -42,7 +50,7 @@ class UltimatePDF(FPDF):
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
+        self.set_font('DejaVu', 'I', 8)
         self.set_text_color(150, 150, 150)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
@@ -51,26 +59,26 @@ class UltimatePDF(FPDF):
         self.set_fill_color(0, 74, 143) 
         self.rect(0, 0, 210, 297, 'F') 
         self.set_text_color(255, 255, 255)
-        self.set_font('Arial', 'B', 40)
+        self.set_font('DejaVu', 'B', 40)
         self.ln(60)
         self.cell(0, 20, "ALSUM", 0, 1, 'C')
-        self.set_font('Arial', '', 14)
+        self.set_font('DejaVu', '', 14)
         self.cell(0, 10, "INTELIGENCIA DE NEGOCIOS", 0, 1, 'C')
         self.ln(40)
-        self.set_font('Arial', 'B', 28)
+        self.set_font('DejaVu', 'B', 28)
         self.multi_cell(0, 15, title, 0, 'C')
         self.ln(10)
-        self.set_font('Arial', 'I', 16)
+        self.set_font('DejaVu', 'I', 16)
         self.multi_cell(0, 10, subtitle, 0, 'C')
 
     def chapter_body(self, text):
-        self.set_font('Arial', '', 11)
+        self.set_font('DejaVu', '', 11)
         self.set_text_color(40, 40, 40)
         self.multi_cell(0, 6, text)
         self.ln()
 
     def section_title(self, title):
-        self.set_font('Arial', 'B', 18)
+        self.set_font('DejaVu', 'B', 18)
         self.set_text_color(0, 74, 143)
         self.ln(10)
         self.cell(0, 12, title, 0, 1, 'L')
@@ -78,29 +86,29 @@ class UltimatePDF(FPDF):
 
     def executive_summary(self, text):
         self.add_page()
-        self.set_font('Arial', 'B', 16)
+        self.set_font('DejaVu', 'B', 16)
         self.set_text_color(0, 74, 143)
         self.cell(0, 10, "Resumen Ejecutivo", 0, 1, 'L')
-        self.set_font('Arial', '', 12)
+        self.set_font('DejaVu', '', 12)
         self.set_text_color(40, 40, 40)
         self.multi_cell(0, 8, text)
         self.ln(5)
 
     def key_findings(self, findings):
-        self.set_font('Arial', 'B', 14)
+        self.set_font('DejaVu', 'B', 14)
         self.set_text_color(0, 74, 143)
         self.cell(0, 10, "Hallazgos Clave", 0, 1, 'L')
-        self.set_font('Arial', '', 11)
+        self.set_font('DejaVu', '', 11)
         self.set_text_color(40, 40, 40)
         for point in findings:
             self.multi_cell(0, 7, f"• {point}")
         self.ln(5)
 
     def recommendations(self, recs):
-        self.set_font('Arial', 'B', 14)
+        self.set_font('DejaVu', 'B', 14)
         self.set_text_color(0, 74, 143)
         self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, 'L')
-        self.set_font('Arial', '', 11)
+        self.set_font('DejaVu', '', 11)
         self.set_text_color(40, 40, 40)
         for rec in recs:
             self.multi_cell(0, 7, f"→ {rec}")
@@ -111,7 +119,7 @@ class UltimatePDF(FPDF):
         self.chapter_body(content)
 
     def add_table(self, data, col_widths=None, align='L'):
-        self.set_font('Arial', '', 10)
+        self.set_font('DejaVu', '', 10)
         if not data:
             self.cell(0, 10, "Sin datos disponibles.", 0, 1)
             return
