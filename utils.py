@@ -26,92 +26,147 @@ def get_api_key():
         return os.environ.get("OPENAI_API_KEY")
 
 # ==========================================
-# 2. MOTOR PDF
+# 2. MOTOR PDF (BLINDADO Y NIVEL EJECUTIVO)
 # ==========================================
 class UltimatePDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Agrega la fuente Unicode (asegúrate de tener fonts/DejaVuSans.ttf)
-        self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
-        self.add_font('DejaVu', 'B', 'fonts/DejaVuSans.ttf', uni=True)
-        self.add_font('DejaVu', 'I', 'fonts/DejaVuSans.ttf', uni=True)
-        self.set_font('DejaVu', '', 11)
+        # 1. Blindaje contra error de espacio horizontal: Márgenes estrictos
+        self.set_margins(15, 20, 15)
+        self.set_auto_page_break(auto=True, margin=15)
+        
+        # 2. Carga de fuentes (Asegúrate de que la carpeta fonts y el TTF existan)
+        # Si no existe, FPDF usará las fuentes por defecto que pueden fallar con tildes.
+        try:
+            self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
+            self.add_font('DejaVu', 'B', 'fonts/DejaVuSans.ttf', uni=True)
+            self.add_font('DejaVu', 'I', 'fonts/DejaVuSans.ttf', uni=True)
+            self.font_family_base = 'DejaVu'
+        except Exception as e:
+            print(f"⚠️ Advertencia: No se encontró la fuente DejaVu. Usando Arial. ({e})")
+            self.font_family_base = 'Arial'
+            
+        self.set_font(self.font_family_base, '', 11)
+
+    def _clean_text(self, text):
+        """
+        Sanitiza el texto generado por la IA para evitar que rompa el PDF.
+        Elimina caracteres invisibles conflictivos y corta palabras absurdamente largas.
+        """
+        if not text: return ""
+        text = str(text)
+        # Limpieza de espacios no separables que rompen el multi_cell
+        text = text.replace('\xa0', ' ').replace('\u200b', '').replace('\t', '    ')
+        
+        # Prevenir el error "Not enough horizontal space..." cortando palabras gigantes
+        words = text.split(' ')
+        # 80 caracteres sin espacios es el límite seguro para una página A4
+        safe_words = [w[:80] + '...' if len(w) > 80 else w for w in words] 
+        return ' '.join(safe_words)
 
     def header(self):
         if self.page_no() > 1:
-            self.set_font('DejaVu', 'B', 9)
-            self.set_text_color(128, 128, 128)
-            self.cell(0, 10, 'ALSUM - ESTRATEGIA 2026', 0, 0, 'L')
+            self.set_font(self.font_family_base, 'B', 9)
+            self.set_text_color(100, 100, 100)
+            self.cell(0, 10, 'ALSUM - INTELIGENCIA DE NEGOCIOS 2026', 0, 0, 'L')
             self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, 'R')
-            self.set_draw_color(0, 74, 143)
+            self.set_draw_color(0, 74, 143) # Azul Corporativo ALSUM
             self.set_line_width(0.5)
-            self.line(10, 20, 200, 20)
-            self.ln(15)
+            self.line(15, 20, 195, 20)
+            self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('DejaVu', 'I', 8)
+        self.set_font(self.font_family_base, 'I', 8)
         self.set_text_color(150, 150, 150)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
     def cover_page(self, title, subtitle):
         self.add_page()
-        self.set_fill_color(0, 74, 143) 
+        self.set_fill_color(0, 74, 143) # Azul corporativo profundo
         self.rect(0, 0, 210, 297, 'F') 
         self.set_text_color(255, 255, 255)
-        self.set_font('DejaVu', 'B', 40)
-        self.ln(60)
+        self.set_font(self.font_family_base, 'B', 40)
+        self.ln(70)
         self.cell(0, 20, "ALSUM", 0, 1, 'C')
-        self.set_font('DejaVu', '', 14)
-        self.cell(0, 10, "INTELIGENCIA DE NEGOCIOS", 0, 1, 'C')
+        
+        self.set_font(self.font_family_base, '', 14)
+        self.set_text_color(200, 215, 230)
+        self.cell(0, 10, "ESTRATEGIA & MERCADO", 0, 1, 'C')
+        
         self.ln(40)
-        self.set_font('DejaVu', 'B', 28)
-        self.multi_cell(0, 15, title, 0, 'C')
-        self.ln(10)
-        self.set_font('DejaVu', 'I', 16)
-        self.multi_cell(0, 10, subtitle, 0, 'C')
+        self.set_text_color(255, 255, 255)
+        self.set_font(self.font_family_base, 'B', 28)
+        self.multi_cell(0, 15, self._clean_text(title), 0, 'C')
+        
+        self.ln(15)
+        self.set_font(self.font_family_base, 'I', 16)
+        self.set_text_color(220, 220, 220)
+        self.multi_cell(0, 10, self._clean_text(subtitle), 0, 'C')
 
     def chapter_body(self, text):
-        self.set_font('DejaVu', '', 11)
-        self.set_text_color(40, 40, 40)
-        self.multi_cell(0, 6, text)
-        self.ln()
+        self.set_font(self.font_family_base, '', 11)
+        self.set_text_color(50, 50, 50)
+        # Usamos multi_cell con un ancho explícito basado en los márgenes (210 - 15 - 15 = 180)
+        self.multi_cell(180, 6, self._clean_text(text))
+        self.ln(4)
 
     def section_title(self, title):
-        self.set_font('DejaVu', 'B', 18)
+        self.set_font(self.font_family_base, 'B', 16)
         self.set_text_color(0, 74, 143)
-        self.ln(10)
-        self.cell(0, 12, title, 0, 1, 'L')
+        self.ln(8)
+        self.cell(0, 10, self._clean_text(title), 0, 1, 'L')
+        # Línea sutil debajo del título
+        self.set_draw_color(200, 200, 200)
+        self.set_line_width(0.2)
+        self.line(self.get_x(), self.get_y(), 195, self.get_y())
         self.ln(4)
 
     def executive_summary(self, text):
         self.add_page()
-        self.set_font('DejaVu', 'B', 16)
+        self.set_font(self.font_family_base, 'B', 18)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 10, "Resumen Ejecutivo", 0, 1, 'L')
-        self.set_font('DejaVu', '', 12)
+        self.cell(0, 12, "Resumen Ejecutivo", 0, 1, 'L')
+        self.ln(2)
+        
+        self.set_font(self.font_family_base, '', 12)
         self.set_text_color(40, 40, 40)
-        self.multi_cell(0, 8, text)
-        self.ln(5)
+        # Interlineado un poco más amplio para lectura ejecutiva
+        self.multi_cell(180, 7, self._clean_text(text))
+        self.ln(8)
 
     def key_findings(self, findings):
-        self.set_font('DejaVu', 'B', 14)
+        self.set_font(self.font_family_base, 'B', 14)
         self.set_text_color(0, 74, 143)
         self.cell(0, 10, "Hallazgos Clave", 0, 1, 'L')
-        self.set_font('DejaVu', '', 11)
+        self.ln(2)
+        
+        self.set_font(self.font_family_base, '', 11)
         self.set_text_color(40, 40, 40)
         for point in findings:
-            self.multi_cell(0, 7, f"• {point}")
+            clean_point = self._clean_text(point)
+            # Evitar viñetas vacías generadas por la IA
+            if clean_point.strip():
+                # Simulamos un padding para la viñeta
+                self.cell(5, 7, "•", 0, 0, 'L')
+                self.multi_cell(175, 7, clean_point)
+                self.ln(2)
         self.ln(5)
 
     def recommendations(self, recs):
-        self.set_font('DejaVu', 'B', 14)
+        self.set_font(self.font_family_base, 'B', 14)
         self.set_text_color(0, 74, 143)
         self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, 'L')
-        self.set_font('DejaVu', '', 11)
+        self.ln(2)
+        
+        self.set_font(self.font_family_base, '', 11)
         self.set_text_color(40, 40, 40)
         for rec in recs:
-            self.multi_cell(0, 7, f"→ {rec}")
+            clean_rec = self._clean_text(rec)
+            if clean_rec.strip():
+                self.cell(5, 7, "→", 0, 0, 'L')
+                self.multi_cell(175, 7, clean_rec)
+                self.ln(2)
         self.ln(5)
 
     def add_section(self, title, content):
@@ -119,34 +174,64 @@ class UltimatePDF(FPDF):
         self.chapter_body(content)
 
     def add_table(self, data, col_widths=None, align='L'):
-        self.set_font('DejaVu', '', 10)
+        self.set_font(self.font_family_base, '', 9)
         if not data:
             self.cell(0, 10, "Sin datos disponibles.", 0, 1)
             return
+            
         n_cols = len(data[0])
-        min_width = 20
+        # Aseguramos que el ancho total de la tabla no exceda los 180mm disponibles
         if not col_widths:
-            # Asegura un ancho mínimo por columna
-            col_width = max(min_width, int(180 / n_cols))
+            col_width = int(180 / n_cols)
             col_widths = [col_width] * n_cols
-        for row in data:
+            
+        # Dibujar tabla
+        for row_idx, row in enumerate(data):
+            # Fila de encabezado en gris claro si es la primera
+            if row_idx == 0:
+                self.set_fill_color(240, 240, 240)
+                self.set_font(self.font_family_base, 'B', 9)
+            else:
+                self.set_fill_color(255, 255, 255)
+                self.set_font(self.font_family_base, '', 9)
+                
             for i, datum in enumerate(row):
-                # Trunca el texto si es demasiado largo para la celda
-                text = str(datum)
-                max_chars = int(col_widths[i] / 3)  # Aproximado
+                text = self._clean_text(str(datum))
+                # Truncar drásticamente para evitar errores de renderizado en celdas
+                max_chars = max(3, int(col_widths[i] * 0.45)) 
                 if len(text) > max_chars:
                     text = text[:max_chars - 3] + "..."
-                self.cell(col_widths[i], 8, text, border=1, align=align)
+                self.cell(col_widths[i], 8, text, border=1, align=align, fill=True)
             self.ln(8)
-        self.ln(4)
+        self.ln(6)
 
-    def add_image_section(self, title, image_path, w=120, h=0):
+    def add_image_section(self, title, image_path, w=170, h=0):
         self.section_title(title)
-        self.image(image_path, w=w, h=h)
+        # Limitamos el ancho al tamaño máximo de la página restando márgenes
+        if w > 180: w = 180
+        
+        if os.path.exists(image_path):
+            # Centrar la imagen en la página si w < 180
+            x_pos = 15 + ((180 - w) / 2)
+            self.image(image_path, x=x_pos, w=w, h=h)
+        else:
+            self.set_font(self.font_family_base, 'I', 10)
+            self.set_text_color(255, 0, 0)
+            self.cell(0, 10, "Error: Imagen de gráfico no encontrada o no pudo ser generada.", 0, 1)
+            
         self.ln(8)
 
     def annex(self, text):
-        self.add_section("Anexos", text)
+        self.add_page()
+        self.set_font(self.font_family_base, 'B', 16)
+        self.set_text_color(100, 100, 100)
+        self.cell(0, 10, "Anexos & Metodología", 0, 1, 'L')
+        self.ln(4)
+        
+        self.set_font(self.font_family_base, '', 10)
+        self.set_text_color(80, 80, 80)
+        self.multi_cell(180, 6, self._clean_text(text))
+        self.ln(5)
 
 # ==========================================
 # 3. CARGA DE DATOS (MÉTODO "SNIFFER" + LOW_MEMORY)
@@ -175,13 +260,12 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
         # --- ESTRATEGIA "SNIFFER" (OLFATEAR EL ARCHIVO) ---
         if filepath.lower().endswith('.csv'):
             print("--- [UTILS] Detectando formato CSV...")
-            # Leemos solo un pedacito (5KB) para detectar el separador
             sep = ','
             enc = 'utf-8'
             
             try:
                 with open(filepath, 'rb') as f:
-                    sample = f.read(10000) # Leemos más bytes para asegurar
+                    sample = f.read(10000) 
                 
                 # Detectar Encoding
                 for e in ['utf-8', 'latin-1', 'cp1252']:
@@ -192,18 +276,15 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
                     except:
                         continue
                 
-                # Detectar Separador (Contamos cuál aparece más)
+                # Detectar Separador
                 if text_sample.count(';') > text_sample.count(','):
                     sep = ';'
                 
                 print(f"--- [UTILS] Formato detectado: Separador='{sep}' | Encoding='{enc}'")
-                
-                # Carga ÚNICA y DEFINITIVA con low_memory=False para evitar warnings
                 df = pd.read_csv(filepath, sep=sep, encoding=enc, on_bad_lines='skip', low_memory=False)
                 
             except Exception as e:
                 print(f"--- [ERROR DETECCIÓN] {e}. Intentando fallback...")
-                # Intento a fuerza bruta si falla el sniffer
                 df = pd.read_csv(filepath, sep=';', encoding='latin-1', on_bad_lines='skip', low_memory=False)
 
         else:
@@ -225,7 +306,9 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
         
         # Rellenos
         defaults = {'Subramo': 'General', 'Ramo': 'Otros', 'País': 'Desconocido', 'AFILIADO': 'NO AFILIADO'}
-        df.fillna(defaults, inplace=True)
+        for col, val in defaults.items():
+            if col in df.columns:
+                df[col] = df[col].fillna(val)
         
         if 'AFILIADO' in df.columns:
             df['AFILIADO'] = df['AFILIADO'].astype(str).str.upper()
@@ -233,7 +316,8 @@ def load_plan_accion_procesado(filepath, sheet_name=None):
             df.loc[mask_no, 'AFILIADO'] = 'NO AFILIADO'
             df.loc[~mask_no, 'AFILIADO'] = 'AFILIADO'
 
-        if 'USD' in df.columns: df['USD'] = df['USD'].apply(parse_numero_latino)
+        if 'USD' in df.columns: 
+            df['USD'] = df['USD'].apply(parse_numero_latino)
 
         # --- PIVOTEO SI ES NECESARIO ---
         if 'Primas' in df.columns and 'Siniestros' in df.columns:
@@ -326,9 +410,7 @@ def fuzzy_merge(df_left, df_right, left_on, right_on, threshold=85):
     s_left['match_score'] = s_left['match_info'].apply(lambda x: x[1] if x else 0)
     
     # 5. Merge Final
-    # Limpiamos duplicados del lado derecho antes de pegar
     right_clean = s_right.drop_duplicates(subset=['key_norm'])
-    
     result = pd.merge(s_left, right_clean, left_on='match_name', right_on='key_norm', how='left', suffixes=('', '_right'))
     
     cols_drop = ['key_norm', 'match_info', 'key_norm_right']
@@ -337,6 +419,9 @@ def fuzzy_merge(df_left, df_right, left_on, right_on, threshold=85):
     print("--- [UTILS] Cruce terminado.")
     return result
 
+# ==========================================
+# 5. FUNCIONES DE IA
+# ==========================================
 def analisis_ia_3_puntos(api_key, prompt, contexto):
     if not api_key:
         return "⚠️ No se detectó la API Key."
