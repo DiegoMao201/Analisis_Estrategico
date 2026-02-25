@@ -69,6 +69,68 @@ class UltimatePDF(FPDF):
         self.multi_cell(0, 6, text)
         self.ln()
 
+    def section_title(self, title):
+        self.set_font('Arial', 'B', 18)
+        self.set_text_color(0, 74, 143)
+        self.ln(10)
+        self.cell(0, 12, title, 0, 1, 'L')
+        self.ln(4)
+
+    def executive_summary(self, text):
+        self.add_page()
+        self.set_font('Arial', 'B', 16)
+        self.set_text_color(0, 74, 143)
+        self.cell(0, 10, "Resumen Ejecutivo", 0, 1, 'L')
+        self.set_font('Arial', '', 12)
+        self.set_text_color(40, 40, 40)
+        self.multi_cell(0, 8, text)
+        self.ln(5)
+
+    def key_findings(self, findings):
+        self.set_font('Arial', 'B', 14)
+        self.set_text_color(0, 74, 143)
+        self.cell(0, 10, "Hallazgos Clave", 0, 1, 'L')
+        self.set_font('Arial', '', 11)
+        self.set_text_color(40, 40, 40)
+        for point in findings:
+            self.multi_cell(0, 7, f"• {point}")
+        self.ln(5)
+
+    def recommendations(self, recs):
+        self.set_font('Arial', 'B', 14)
+        self.set_text_color(0, 74, 143)
+        self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, 'L')
+        self.set_font('Arial', '', 11)
+        self.set_text_color(40, 40, 40)
+        for rec in recs:
+            self.multi_cell(0, 7, f"→ {rec}")
+        self.ln(5)
+
+    def add_section(self, title, content):
+        self.section_title(title)
+        self.chapter_body(content)
+
+    def add_table(self, data, col_widths=None, align='L'):
+        self.set_font('Arial', '', 10)
+        if not data:
+            self.cell(0, 10, "Sin datos disponibles.", 0, 1)
+            return
+        if not col_widths:
+            col_widths = [180 // len(data[0])] * len(data[0])
+        for row in data:
+            for i, datum in enumerate(row):
+                self.cell(col_widths[i], 8, str(datum), border=1, align=align)
+            self.ln(8)
+        self.ln(4)
+
+    def add_image_section(self, title, image_path, w=120, h=0):
+        self.section_title(title)
+        self.image(image_path, w=w, h=h)
+        self.ln(8)
+
+    def annex(self, text):
+        self.add_section("Anexos", text)
+
 # ==========================================
 # 3. CARGA DE DATOS (MÉTODO "SNIFFER" + LOW_MEMORY)
 # ==========================================

@@ -6,6 +6,10 @@ import datetime
 import unicodedata
 from openai import OpenAI
 import os
+import tempfile
+
+def save_plotly_figure(fig, filename):
+    fig.write_image(filename, format="png", width=1000, height=600)
 
 # ==========================================
 # 0. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
@@ -118,6 +122,47 @@ def generar_insight_ia(contexto_data, tipo_analisis):
             messages=[
                 {"role": "system", "content": prompt_sys},
                 {"role": "user", "content": prompt_user}
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error IA: {str(e)}"
+
+def generar_seccion_ia(api_key, contexto, tipo):
+    prompts = {
+        "resumen": (
+            "Eres un analista senior de seguros. Resume en máximo 5 líneas, "
+            "en lenguaje ejecutivo, los puntos más relevantes del contexto. "
+            "Enfócate en visión estratégica, oportunidades y riesgos clave."
+        ),
+        "hallazgos": (
+            "Actúa como consultor estratégico. Enumera 3 hallazgos clave en bullets, "
+            "cada uno con enfoque en: 1) oportunidad, 2) riesgo o anomalía, 3) recomendación ejecutiva."
+        ),
+        "analisis": (
+            "Haz un análisis detallado de los datos. Explica tendencias, riesgos, oportunidades, "
+            "y destaca cualquier outlier relevante. Usa lenguaje profesional y preciso."
+        ),
+        "recomendaciones": (
+            "Sugiere 3 recomendaciones estratégicas, claras y accionables, priorizadas según impacto. "
+            "Sé concreto y profesional."
+        ),
+        "anexos": (
+            "Describe en 3 líneas la metodología utilizada, las fuentes de datos y cualquier limitación relevante. "
+            "Sé breve y formal."
+        )
+    }
+    prompt = prompts.get(tipo, "Resume los datos de forma ejecutiva.")
+    if not api_key:
+        return "⚠️ API Key no configurada. No se puede generar el análisis."
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un analista senior de seguros, preciso y ejecutivo."},
+                {"role": "user", "content": f"{prompt}\n\nContexto:\n{contexto}"}
             ],
             temperature=0.7
         )
@@ -482,7 +527,7 @@ with c_text:
     st.info("💡 **Análisis Rápido:** La proporción de 'No Reporta' indica el nivel de opacidad del mercado seleccionado.")
     if st.button("🤖 Analizar KPI Global con IA", key="btn_ia_global"):
         with st.spinner("Consultando estrategia..."):
-            contexto = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}"
+            contexto = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}. {instruccion}"
             insight = generar_insight_ia(contexto, "KPIs Globales")
             st.success("Análisis Generado:")
             st.markdown(insight)
@@ -505,29 +550,36 @@ with tab3:
     if btn_pdf:
         with st.status("🛠️ Construyendo informe...", expanded=True):
             st.write("Analizando datos globales...")
-            resumen_data = f"Total Primas: {total_primas}, Siniestralidad: {siniestralidad_global}%."
-            texto_ia = generar_insight_ia(resumen_data + " " + instruccion, "Resumen Ejecutivo PDF")
-            
+
+            # Contextos para IA
+            contexto_global = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}. {instruccion}"
+
+            resumen = generar_seccion_ia(api_key, contexto_global, "resumen")
+            hallazgos = generar_seccion_ia(api_key, contexto_global, "hallazgos").split('\n')
+            analisis = generar_seccion_ia(api_key, contexto_global, "analisis")
+            recomendaciones = generar_seccion_ia(api_key, contexto_global, "recomendaciones").split('\n')
+            anexos = generar_seccion_ia(api_key, contexto_global, "anexos")
+
+            # Guardar gráficos
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile1:
+                save_plotly_figure(fig_bar, tmpfile1.name)
+                bar_chart_path = tmpfile1.name
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile2:
+                save_plotly_figure(fig_pie, tmpfile2.name)
+                pie_chart_path = tmpfile2.name
+
             try:
                 st.write("Maquetando documento...")
-                # Verificamos si utils.UltimatePDF existe (importado al inicio)
-                if 'UltimatePDF' in dir(utils):
-                    pdf = utils.UltimatePDF()
-                else:
-                    # Fallback si no está la clase en utils pero el archivo cargó
-                    class PDF_Dummy:
-                        def cover_page(self, t, s): pass
-                        def add_page(self): pass
-                        def section_title(self, t): pass
-                        def chapter_body(self, t): pass
-                        def output(self, dest): return b'PDF SIMULADO'
-                    pdf = PDF_Dummy()
-
+                pdf = utils.UltimatePDF()
                 pdf.cover_page("INFORME ESTRATÉGICO 2026", "ALSUM INTELLIGENCE")
-                pdf.add_page()
-                pdf.section_title("HALLAZGOS CLAVE")
-                pdf.chapter_body(texto_ia)
-                
+                pdf.executive_summary(resumen)
+                pdf.key_findings([h for h in hallazgos if h.strip()])
+                pdf.add_section("Análisis Detallado", analisis)
+                pdf.section_title("Visualizaciones Clave")
+                pdf.add_image_section("Desempeño por Ramo", bar_chart_path)
+                pdf.add_image_section("Distribución de Flujos", pie_chart_path)
+                pdf.recommendations([r for r in recomendaciones if r.strip()])
+                pdf.annex(anexos)
                 pdf_bytes = bytes(pdf.output(dest='S'))
                 st.write("✅ ¡Hecho!")
                 st.download_button("📥 Descargar PDF", data=pdf_bytes, file_name="Reporte_ALSUM.pdf", mime="application/pdf")
@@ -543,7 +595,7 @@ with tab4:
     csv = df_filtrado.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Descargar CSV Filtrado", data=csv, file_name="data_filtrada.csv", mime="text/csv")
 
-    # ==========================================
+# ==========================================
 # 7. VISUALIZACIÓN PRINCIPAL (HOME)
 # ==========================================
 
@@ -625,8 +677,6 @@ if 'Compañía' in df_filtrado.columns and sel_companias:
         .format({'Primas': '${:,.0f}', 'Siniestros': '${:,.0f}', 'No Reporta': '${:,.0f}', 'Siniestralidad %': '{:.1f}%'}),
         use_container_width=True
     )
-
-# ...después de la tabla de análisis por empresa y país...
 
 # --- TABLA: CUÁNTAS EMPRESAS HAY POR PAÍS (OBEDECE TODOS LOS FILTROS) ---
 if 'Compañía' in df_filtrado.columns and 'País' in df_filtrado.columns:
