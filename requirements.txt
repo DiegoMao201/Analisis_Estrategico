@@ -9,4 +9,3 @@ python-Levenshtein
 matplotlib
 statsmodels
 xlsxwriter
-kaleido
