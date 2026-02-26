@@ -19,6 +19,118 @@ from matplotlib.ticker import FuncFormatter
 MODEL = "gpt-4o-mini"
 
 
+# =========================
+# NUMÉRICOS + TOTALES (ROBUSTO)
+# =========================
+def _to_num(x):
+    """
+    Convierte a float (robusto) soportando:
+    - Escalar (str/int/float)
+    - pd.Series (aplica elemento a elemento)
+    Formato latino: 1.234.567,89 -> 1234567.89
+    """
+    if isinstance(x, pd.Series):
+        return x.apply(_to_num)
+
+    if x is None or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and x.strip() == ""):
+        return 0.0
+
+    if isinstance(x, (int, float)) and not pd.isna(x):
+        return float(x)
+
+    # Usa parser del proyecto si está disponible (consistencia con utils.py)
+    try:
+        if hasattr(utils, "parse_numero_latino"):
+            return float(utils.parse_numero_latino(x))
+    except Exception:
+        pass
+
+    s = str(x).strip()
+    s = re.sub(r"[^\d,.\-]", "", s)
+
+    # Heurística separadores
+    if "," in s and "." in s:
+        # decimal = el separador que aparece más a la derecha
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")  # 1.234,56 -> 1234.56
+        else:
+            s = s.replace(",", "")  # 1,234.56 -> 1234.56
+    elif "," in s and "." not in s:
+        s = s.replace(".", "").replace(",", ".")  # 1234,56 -> 1234.56
+
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _kw_sum_row(row: pd.Series, cols: List[str], keyword: str) -> float:
+    """
+    Suma en una fila las columnas cuyo nombre contenga `keyword` (case-insensitive).
+    Maneja variantes de "No Reporta": No_Reporta / Noreporta / No Reporta
+    """
+    kw = str(keyword).strip().lower()
+    matches: List[str] = []
+
+    for c in cols:
+        cn = str(c).strip().lower().replace("_", " ")
+        if kw in cn:
+            matches.append(c)
+            continue
+        if kw == "no reporta":
+            cn2 = cn.replace(" ", "")
+            if "noreporta" in cn2 or "noreportado" in cn2:
+                matches.append(c)
+
+    if not matches:
+        return 0.0
+
+    total = 0.0
+    for c in matches:
+        try:
+            total += float(row.get(c, 0.0) or 0.0)
+        except Exception:
+            total += 0.0
+    return total
+
+
+def _compute_totals_from_long(df_long: pd.DataFrame) -> Dict[str, float]:
+    """
+    Calcula totales desde DF en formato LONG (Tipo, USD) o WIDE (Primas/Siniestros/No Reporta).
+    Retorna: Primas, Siniestros, No Reporta, Siniestralidad
+    """
+    if df_long is None or df_long.empty:
+        return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
+
+    d = df_long.copy()
+
+    # WIDE directo
+    if "Primas" in d.columns and "Siniestros" in d.columns:
+        primas = float(_to_num(d["Primas"]).sum())
+        sin = float(_to_num(d["Siniestros"]).sum())
+        nr = float(_to_num(d["No Reporta"]).sum()) if "No Reporta" in d.columns else 0.0
+        ratio = (sin / primas * 100.0) if primas > 0 else 0.0
+        return {"Primas": primas, "Siniestros": sin, "No Reporta": nr, "Siniestralidad": ratio}
+
+    # LONG
+    if "USD" in d.columns:
+        d["USD"] = _to_num(d["USD"])
+    else:
+        d["USD"] = 0.0
+
+    if "Tipo" not in d.columns:
+        return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
+
+    t = d["Tipo"].astype(str).str.lower()
+
+    primas = float(d[t.str.contains("prima", na=False)]["USD"].sum())
+    sin = float(d[t.str.contains("siniestro", na=False)]["USD"].sum())
+    nr = float(d[t.str.contains(r"no reporta|no_reporta|noreporta", na=False, regex=True)]["USD"].sum())
+
+    ratio = (sin / primas * 100.0) if primas > 0 else 0.0
+    return {"Primas": primas, "Siniestros": sin, "No Reporta": nr, "Siniestralidad": ratio}
+
+
 # -----------------------
 # Helpers de formateo PNG
 # -----------------------
