@@ -9,38 +9,224 @@ from openai import OpenAI
 
 import utils
 
+# ✅ NUEVO (render robusto sin Kaleido/Chromium)
+import matplotlib
+matplotlib.use("Agg")  # backend headless para servidores
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+
 MODEL = "gpt-4o-mini"
 
 
-def _to_num(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series, errors="coerce").fillna(0)
+# -----------------------
+# Helpers de formateo PNG
+# -----------------------
+def _fmt_usd(v: float) -> str:
+    try:
+        return f"{float(v):,.0f}"
+    except Exception:
+        return "0"
 
 
-def _kw_sum_row(row: pd.Series, cols: List[str], keyword: str) -> float:
-    matches = [c for c in cols if keyword.lower() in str(c).lower()]
-    if not matches:
-        return 0.0
-    return float(row[matches].sum())
+def _fmt_pct(v: float) -> str:
+    try:
+        return f"{float(v):.1f}%"
+    except Exception:
+        return "0.0%"
 
 
-def _compute_totals_from_long(df: pd.DataFrame) -> Dict[str, float]:
-    if df.empty:
-        return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
+def _apply_exec_style(ax):
+    ax.grid(True, axis="y", color="#e2e8f0", linewidth=1, alpha=1)
+    ax.set_axisbelow(True)
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
 
-    d = df.copy()
-    d["USD"] = _to_num(d.get("USD", 0))
 
-    primas = d[d["Tipo"].astype(str).str.contains("Prima", case=False, na=False)]["USD"].sum()
-    siniestros = d[d["Tipo"].astype(str).str.contains("Siniestro", case=False, na=False)]["USD"].sum()
-    noreporta = d[d["Tipo"].astype(str).str.contains("No Reporta", case=False, na=False)]["USD"].sum()
-    siniestralidad = (siniestros / primas * 100) if primas > 0 else 0.0
+def _annotate_bars(ax, bars, *, fmt="usd", y_pad_ratio=0.01, fontsize=10):
+    # Etiquetas SIEMPRE visibles (valores sobre cada barra)
+    ymax = 0.0
+    for b in bars:
+        try:
+            ymax = max(ymax, float(b.get_height()))
+        except Exception:
+            pass
+    pad = max(1.0, ymax * y_pad_ratio)
 
-    return {
-        "Primas": float(primas),
-        "Siniestros": float(siniestros),
-        "No Reporta": float(noreporta),
-        "Siniestralidad": float(siniestralidad),
-    }
+    for b in bars:
+        h = float(b.get_height())
+        label = _fmt_pct(h) if fmt == "pct" else _fmt_usd(h)
+        ax.text(
+            b.get_x() + b.get_width() / 2,
+            h + pad,
+            label,
+            ha="center",
+            va="bottom",
+            fontsize=fontsize,
+            color="#0f172a",
+            clip_on=False,
+        )
+
+
+def _save_png_primas_vs_siniestros_ramo(ramo_stats: pd.DataFrame, filename: str, title: str) -> None:
+    d = ramo_stats.copy()
+    if d.empty:
+        fig = plt.figure(figsize=(14, 7), dpi=200)
+        plt.title(title)
+        plt.text(0.5, 0.5, "Sin datos", ha="center", va="center")
+        plt.axis("off")
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    d = d.sort_values("Primas", ascending=False).head(15)
+    x = list(d["Ramo"].astype(str).values)
+
+    fig, ax = plt.subplots(figsize=(15, 7.5), dpi=220)
+    _apply_exec_style(ax)
+
+    idx = range(len(x))
+    width = 0.38
+
+    bars1 = ax.bar([i - width / 2 for i in idx], d["Primas"].values, width=width, color="#004A8F", label="Primas (USD)")
+    bars2 = ax.bar([i + width / 2 for i in idx], d["Siniestros"].values, width=width, color="#DC2626", label="Siniestros (USD)")
+
+    ax.set_title(title, loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+    ax.set_xlabel("Ramo", fontsize=12, color="#0f172a")
+    ax.set_ylabel("USD", fontsize=12, color="#0f172a")
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+
+    ax.set_xticks(list(idx))
+    ax.set_xticklabels(x, rotation=35, ha="right", fontsize=10)
+
+    _annotate_bars(ax, bars1, fmt="usd", y_pad_ratio=0.012, fontsize=10)
+    _annotate_bars(ax, bars2, fmt="usd", y_pad_ratio=0.012, fontsize=10)
+
+    # Deja espacio para etiquetas
+    y_max = float(max(d["Primas"].max(), d["Siniestros"].max()))
+    ax.set_ylim(0, (y_max * 1.35) if y_max > 0 else 1)
+
+    ax.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#cbd5e1")
+    fig.tight_layout()
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _save_png_siniestralidad_ramo(ramo_stats: pd.DataFrame, filename: str, title: str) -> None:
+    d = ramo_stats.copy()
+    if d.empty:
+        fig = plt.figure(figsize=(14, 7), dpi=200)
+        plt.title(title)
+        plt.text(0.5, 0.5, "Sin datos", ha="center", va="center")
+        plt.axis("off")
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    d = d.sort_values("Primas", ascending=False).head(15)
+    x = list(d["Ramo"].astype(str).values)
+
+    def color_ratio(r):
+        if r < 50:
+            return "#10B981"
+        if r < 75:
+            return "#F59E0B"
+        return "#EF4444"
+
+    colors = [color_ratio(float(v)) for v in d["Siniestralidad"].values]
+
+    fig, ax = plt.subplots(figsize=(15, 7.2), dpi=220)
+    _apply_exec_style(ax)
+
+    bars = ax.bar(x, d["Siniestralidad"].values, color=colors, label="Siniestralidad (%)")
+    ax.set_title(title, loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+    ax.set_xlabel("Ramo", fontsize=12, color="#0f172a")
+    ax.set_ylabel("%", fontsize=12, color="#0f172a")
+    ax.set_xticklabels(x, rotation=35, ha="right", fontsize=10)
+
+    _annotate_bars(ax, bars, fmt="pct", y_pad_ratio=0.02, fontsize=10)
+
+    y_max = float(d["Siniestralidad"].max())
+    ax.set_ylim(0, max(10.0, y_max * 1.35))
+
+    ax.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#cbd5e1")
+    fig.tight_layout()
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _save_png_evolucion_foco(foco_year_stats: pd.DataFrame, filename: str, title: str) -> None:
+    dfx = foco_year_stats.copy()
+    if dfx.empty:
+        fig = plt.figure(figsize=(14, 7), dpi=200)
+        plt.title(title)
+        plt.text(0.5, 0.5, "Sin datos", ha="center", va="center")
+        plt.axis("off")
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    order = ["Carga", "Cascos", "RC"]
+    years = sorted(dfx["Año"].astype(int).unique().tolist())
+    years_lbl = [str(y) for y in years]
+
+    fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(15, 12.8), dpi=220, sharex=True)
+    fig.suptitle(title, x=0.01, ha="left", fontsize=20, fontweight="bold", color="#0f172a")
+
+    for ax, ramo in zip(axes, order):
+        sub = dfx[dfx["RamoFoco"] == ramo].copy()
+        # Asegura orden por año
+        sub["Año"] = sub["Año"].astype(int)
+        sub = sub.sort_values("Año")
+
+        # Si faltan años, rellena 0
+        sub = pd.DataFrame({"Año": years}).merge(sub, on="Año", how="left").fillna(0)
+
+        idx = range(len(years))
+        width = 0.38
+
+        _apply_exec_style(ax)
+        ax.set_title(f"{ramo} | Primas vs Siniestros + Siniestralidad", loc="left", fontsize=14, fontweight="bold", color="#0f172a")
+
+        bars1 = ax.bar([i - width / 2 for i in idx], sub["Primas"].values, width=width, color="#004A8F", label="Primas (USD)")
+        bars2 = ax.bar([i + width / 2 for i in idx], sub["Siniestros"].values, width=width, color="#DC2626", label="Siniestros (USD)")
+
+        ax.set_ylabel("USD", fontsize=11)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+
+        # Etiquetas barras
+        _annotate_bars(ax, bars1, fmt="usd", y_pad_ratio=0.012, fontsize=9)
+        _annotate_bars(ax, bars2, fmt="usd", y_pad_ratio=0.012, fontsize=9)
+
+        # Línea siniestralidad en segundo eje
+        ax2 = ax.twinx()
+        ax2.plot(list(idx), sub["Siniestralidad"].values, color="#111827", marker="o", linewidth=2, label="Siniestralidad (%)")
+        ax2.set_ylabel("%", fontsize=11)
+        ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}%"))
+
+        # Etiquetas % en cada punto
+        for i, v in enumerate(sub["Siniestralidad"].values):
+            ax2.text(i, float(v) + 0.5, _fmt_pct(v), ha="center", va="bottom", fontsize=9, color="#111827", clip_on=False)
+
+        # Rangos para que no se recorte nada
+        y_max = float(max(sub["Primas"].max(), sub["Siniestros"].max()))
+        ax.set_ylim(0, (y_max * 1.40) if y_max > 0 else 1)
+        pct_max = float(sub["Siniestralidad"].max()) if len(sub) else 0.0
+        ax2.set_ylim(0, max(10.0, pct_max * 1.35))
+
+        # Leyenda combinada (solo una, arriba)
+        if ramo == "Carga":
+            h1, l1 = ax.get_legend_handles_labels()
+            h2, l2 = ax2.get_legend_handles_labels()
+            fig.legend(h1 + h2, l1 + l2, loc="upper left", bbox_to_anchor=(0.01, 0.965), ncol=3,
+                       frameon=True, facecolor="white", edgecolor="#cbd5e1")
+
+    axes[-1].set_xticks(list(range(len(years_lbl))))
+    axes[-1].set_xticklabels(years_lbl, fontsize=11)
+    axes[-1].set_xlabel("Año", fontsize=12)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
 
 
 def build_ramo_stats(df_pais: pd.DataFrame) -> pd.DataFrame:
@@ -565,34 +751,32 @@ def generate_pdf_consolidado_por_pais(
                 )
             pdf.add_table(table_ramo, col_widths=[85, 35, 35, 25])
 
-        # ===== GRÁFICAS (con etiquetas) =====
+        # ===== GRÁFICAS (PNG robusto SIN Kaleido) =====
         tmp_files = []
         try:
-            fig_pr_sin_ramo = make_fig_primas_vs_siniestros_ramo(
-                ramo_stats,
-                title=f"{pais} | Primas vs Siniestros por Ramo (Top {min(top_ramos, len(ramo_stats))})",
-            )
-            fig_sinies = make_fig_siniestralidad_ramo(
-                ramo_stats,
-                title=f"{pais} | Siniestralidad (%) por Ramo (Top {min(top_ramos, len(ramo_stats))})",
-            )
-
-            # Evolución 2022-2024 en ramos foco
             foco_year = build_foco_year_stats(df_pais, years_focus=years_focus)
-            fig_evo = make_fig_evolucion_foco(
-                foco_year,
-                title=f"{pais} | Evolución {years_focus[0]}–{years_focus[-1]} (Carga / Cascos / RC)",
-            )
 
             f1 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f1.close()
             f2 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f2.close()
             f3 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f3.close()
 
-            save_plotly_figure(fig_pr_sin_ramo, f1.name)
-            save_plotly_figure(fig_sinies, f2.name)
-            save_plotly_figure(fig_evo, f3.name)
-
             tmp_files.extend([f1.name, f2.name, f3.name])
+
+            _save_png_primas_vs_siniestros_ramo(
+                ramo_stats,
+                f1.name,
+                title=f"{pais} | Primas vs Siniestros por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+            )
+            _save_png_siniestralidad_ramo(
+                ramo_stats,
+                f2.name,
+                title=f"{pais} | Siniestralidad (%) por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+            )
+            _save_png_evolucion_foco(
+                foco_year,
+                f3.name,
+                title=f"{pais} | Evolución {years_focus[0]}–{years_focus[-1]} (Carga / Cascos / RC)",
+            )
 
             pdf.section_title("Visualizaciones Clave del País (Etiquetadas)")
             pdf.add_image_section("Primas vs Siniestros por Ramo", f1.name, w=180)
@@ -601,7 +785,6 @@ def generate_pdf_consolidado_por_pais(
             # Tabla + evolución foco
             if not foco_year.empty:
                 pdf.section_title(f"Comparativo {years_focus[0]}–{years_focus[-1]} | Ramos Foco (Carga/Cascos/RC)")
-                # Tabla compacta por ramo foco y año
                 table_foco = [["Ramo Foco", "Año", "Primas", "Siniestros", "Siniestr. %"]]
                 for _, r in foco_year.iterrows():
                     table_foco.append(
