@@ -1,14 +1,13 @@
 import os
 import tempfile
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from openai import OpenAI
 
 import utils
-
 
 MODEL = "gpt-4o-mini"
 
@@ -25,7 +24,6 @@ def _kw_sum_row(row: pd.Series, cols: List[str], keyword: str) -> float:
 
 
 def _compute_totals_from_long(df: pd.DataFrame) -> Dict[str, float]:
-    # Asume esquema de tu app: Tipo + USD
     if df.empty:
         return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
 
@@ -46,7 +44,6 @@ def _compute_totals_from_long(df: pd.DataFrame) -> Dict[str, float]:
 
 
 def build_ramo_stats(df_pais: pd.DataFrame) -> pd.DataFrame:
-    # Estadísticas por ramo usando tu lógica de pivot por Tipo
     if df_pais.empty:
         return pd.DataFrame(columns=["Ramo", "Primas", "Siniestros", "No Reporta", "Siniestralidad"])
 
@@ -56,7 +53,7 @@ def build_ramo_stats(df_pais: pd.DataFrame) -> pd.DataFrame:
     g["Primas"] = g.apply(lambda r: _kw_sum_row(r, cols, "Prima"), axis=1)
     g["Siniestros"] = g.apply(lambda r: _kw_sum_row(r, cols, "Siniestro"), axis=1)
     g["No Reporta"] = g.apply(lambda r: _kw_sum_row(r, cols, "No Reporta"), axis=1)
-    g["Siniestralidad"] = (g["Siniestros"] / g["Primas"] * 100).replace([pd.NA, pd.NaT], 0).fillna(0)
+    g["Siniestralidad"] = (g["Siniestros"] / g["Primas"] * 100).fillna(0)
 
     g = g[["Ramo", "Primas", "Siniestros", "No Reporta", "Siniestralidad"]]
     g = g.sort_values("Primas", ascending=False)
@@ -94,7 +91,6 @@ def build_top_empresas(df_pais: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
 
 
 def _get_color_siniestralidad(ratio: float) -> str:
-    # Semáforo similar a tu dashboard
     if ratio < 50:
         return "#10B981"
     if ratio < 75:
@@ -102,43 +98,67 @@ def _get_color_siniestralidad(ratio: float) -> str:
     return "#EF4444"
 
 
-def make_fig_primas_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Figure:
+def _layout_exec(title: str) -> dict:
+    return dict(
+        title=title,
+        template="plotly_white",
+        font=dict(family="DejaVu Sans, Arial", size=14, color="#0f172a"),
+        margin=dict(l=40, r=25, t=70, b=80),
+        legend=dict(orientation="h", y=1.15, x=0),
+    )
+
+
+def make_fig_primas_vs_siniestros_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Figure:
+    if ramo_stats.empty:
+        return go.Figure(layout=_layout_exec(title))
+
     d = ramo_stats.copy()
-    d["Color"] = d["Siniestralidad"].apply(_get_color_siniestralidad)
+    d = d.sort_values("Primas", ascending=False).head(15)
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=d["Ramo"],
             y=d["Primas"],
-            name="Primas",
-            marker_color=d["Color"],
-            text=d["Siniestralidad"].apply(lambda x: f"{x:.1f}%"),
-            textposition="auto",
+            name="Primas (USD)",
+            marker_color="#004A8F",
+            text=d["Primas"].apply(lambda v: f"{v:,.0f}"),
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="Ramo=%{x}<br>Primas=%{y:,.0f}<extra></extra>",
         )
     )
     fig.add_trace(
         go.Bar(
             x=d["Ramo"],
-            y=d["No Reporta"],
-            name="No Reporta",
-            marker_color="#94A3B8",
+            y=d["Siniestros"],
+            name="Siniestros (USD)",
+            marker_color="#DC2626",
+            text=d["Siniestros"].apply(lambda v: f"{v:,.0f}"),
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="Ramo=%{x}<br>Siniestros=%{y:,.0f}<extra></extra>",
         )
     )
+
     fig.update_layout(
-        title=title,
-        barmode="stack",
-        xaxis_tickangle=-35,
-        template="plotly_white",
-        legend=dict(orientation="h", y=1.12),
-        margin=dict(l=10, r=10, t=60, b=10),
-        height=520,
+        **_layout_exec(title),
+        barmode="group",
+        xaxis=dict(title="Ramo", tickangle=-35, automargin=True),
+        yaxis=dict(title="USD", automargin=True),
+        height=560,
+        uniformtext_minsize=10,
+        uniformtext_mode="hide",
     )
     return fig
 
 
 def make_fig_siniestralidad_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Figure:
+    if ramo_stats.empty:
+        return go.Figure(layout=_layout_exec(title))
+
     d = ramo_stats.copy()
+    d = d.sort_values("Primas", ascending=False).head(15)
     d["Color"] = d["Siniestralidad"].apply(_get_color_siniestralidad)
 
     fig = go.Figure()
@@ -149,23 +169,24 @@ def make_fig_siniestralidad_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Fig
             name="Siniestralidad (%)",
             marker_color=d["Color"],
             text=d["Siniestralidad"].apply(lambda x: f"{x:.1f}%"),
-            textposition="auto",
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="Ramo=%{x}<br>Siniestralidad=%{y:.1f}%<extra></extra>",
         )
     )
     fig.update_layout(
-        title=title,
-        template="plotly_white",
-        xaxis_tickangle=-35,
-        yaxis_title="%",
-        margin=dict(l=10, r=10, t=60, b=10),
-        height=480,
+        **_layout_exec(title),
+        xaxis=dict(title="Ramo", tickangle=-35, automargin=True),
+        yaxis=dict(title="%", rangemode="tozero", automargin=True),
+        height=520,
+        uniformtext_minsize=10,
+        uniformtext_mode="hide",
     )
     return fig
 
 
 def save_plotly_figure(fig: go.Figure, filename: str) -> None:
-    # Kaleido
-    fig.write_image(filename, format="png", width=1100, height=650)
+    fig.write_image(filename, format="png", width=1400, height=800, scale=2)
 
 
 def _df_to_context_table(df: pd.DataFrame, cols: List[str], max_rows: int) -> str:
@@ -175,13 +196,15 @@ def _df_to_context_table(df: pd.DataFrame, cols: List[str], max_rows: int) -> st
     return view.to_string(index=False)
 
 
-def _call_ia_country(api_key: str, pais: str, years: List[int], totals: Dict[str, float], ramo_stats: pd.DataFrame, top_empresas: pd.DataFrame, instruccion: str) -> Dict[str, object]:
-    """
-    Retorna dict con:
-      - resumen (str)
-      - hallazgos (List[str])
-      - recomendaciones (List[str])
-    """
+def _call_ia_country(
+    api_key: str,
+    pais: str,
+    years: List[int],
+    totals: Dict[str, float],
+    ramo_stats: pd.DataFrame,
+    top_empresas: pd.DataFrame,
+    instruccion: str,
+) -> Dict[str, object]:
     if not api_key:
         return {
             "resumen": "⚠️ API Key no configurada. Se omite análisis IA por país.",
@@ -224,7 +247,7 @@ INSTRUCCIÓN DEL USUARIO:
 
 FORMATO DE RESPUESTA OBLIGATORIO (no agregues otras secciones):
 RESUMEN:
-- (máximo 5 líneas ejecutivas, sin tecnicismos innecesarios)
+- (máximo 5 líneas ejecutivas)
 
 HALLAZGOS:
 - (3 bullets: 1 oportunidad, 1 riesgo/anomalía, 1 tendencia)
@@ -247,7 +270,6 @@ RECOMENDACIONES:
     except Exception as e:
         return {"resumen": f"Error IA: {e}", "hallazgos": [], "recomendaciones": []}
 
-    # Parse simple por encabezados
     def _extract_block(label: str, next_labels: List[str]) -> str:
         t = text
         idx = t.upper().find(label)
@@ -271,7 +293,6 @@ RECOMENDACIONES:
         for l in lines:
             if not l:
                 continue
-            # Normaliza bullets comunes
             l = l.lstrip("-•* ").strip()
             if l:
                 out.append(l)
@@ -279,11 +300,142 @@ RECOMENDACIONES:
 
     hallazgos = _bullets(hallazgos_blk)[:6]
     recs = _bullets(recs_blk)[:6]
-
-    # resumen: devolver texto corrido pero limpio
     resumen = "\n".join([l.strip() for l in resumen_blk.splitlines() if l.strip()]) if resumen_blk else text.strip()
 
     return {"resumen": resumen, "hallazgos": hallazgos, "recomendaciones": recs}
+
+
+# =========================
+# EVOLUCIÓN 2022-2024 (FOCO)
+# =========================
+def _normalize_ramo(s: str) -> str:
+    return str(s or "").strip().lower()
+
+
+def _ramo_bucket(ramo: str) -> str | None:
+    r = _normalize_ramo(ramo)
+    if "carga" in r:
+        return "Carga"
+    if "casco" in r or "cascos" in r:
+        return "Cascos"
+    if r == "rc" or "responsabilidad" in r or "responsabilidad civil" in r or "civil" in r:
+        return "RC"
+    return None
+
+
+def build_foco_year_stats(df_pais: pd.DataFrame, years_focus: List[int]) -> pd.DataFrame:
+    if df_pais.empty:
+        return pd.DataFrame(columns=["Año", "RamoFoco", "Primas", "Siniestros", "Siniestralidad"])
+
+    d = df_pais.copy()
+    d["Año"] = pd.to_numeric(d["Año"], errors="coerce")
+    d = d.dropna(subset=["Año"])
+    d["Año"] = d["Año"].astype(int)
+    d = d[d["Año"].isin(years_focus)]
+
+    d["RamoFoco"] = d["Ramo"].apply(_ramo_bucket)
+    d = d.dropna(subset=["RamoFoco"])
+
+    if d.empty:
+        return pd.DataFrame(columns=["Año", "RamoFoco", "Primas", "Siniestros", "Siniestralidad"])
+
+    piv = d.groupby(["Año", "RamoFoco", "Tipo"])["USD"].sum().unstack(fill_value=0).reset_index()
+    cols = piv.columns.tolist()
+
+    piv["Primas"] = piv.apply(lambda r: _kw_sum_row(r, cols, "Prima"), axis=1)
+    piv["Siniestros"] = piv.apply(lambda r: _kw_sum_row(r, cols, "Siniestro"), axis=1)
+    piv["Siniestralidad"] = (piv["Siniestros"] / piv["Primas"] * 100).fillna(0)
+
+    out = piv[["Año", "RamoFoco", "Primas", "Siniestros", "Siniestralidad"]].copy()
+
+    grid = pd.MultiIndex.from_product([years_focus, ["Carga", "Cascos", "RC"]], names=["Año", "RamoFoco"]).to_frame(index=False)
+    out = grid.merge(out, on=["Año", "RamoFoco"], how="left").fillna(0)
+
+    return out.sort_values(["RamoFoco", "Año"])
+
+
+def make_fig_evolucion_foco(foco_year_stats: pd.DataFrame, title: str) -> go.Figure:
+    if foco_year_stats.empty:
+        return go.Figure(layout=_layout_exec(title))
+
+    fig = make_subplots(
+        rows=3,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        specs=[[{"secondary_y": True}], [{"secondary_y": True}], [{"secondary_y": True}]],
+        subplot_titles=("Carga | Primas vs Siniestros + Siniestralidad", "Cascos | Primas vs Siniestros + Siniestralidad", "RC | Primas vs Siniestros + Siniestralidad"),
+    )
+
+    order = ["Carga", "Cascos", "RC"]
+    for i, ramo in enumerate(order, start=1):
+        d = foco_year_stats[foco_year_stats["RamoFoco"] == ramo].copy()
+        x = d["Año"].astype(str)
+
+        fig.add_trace(
+            go.Bar(
+                x=x,
+                y=d["Primas"],
+                name="Primas (USD)" if i == 1 else None,
+                marker_color="#004A8F",
+                text=d["Primas"].apply(lambda v: f"{v:,.0f}"),
+                textposition="outside",
+                cliponaxis=False,
+                showlegend=(i == 1),
+                hovertemplate="Año=%{x}<br>Primas=%{y:,.0f}<extra></extra>",
+            ),
+            row=i,
+            col=1,
+            secondary_y=False,
+        )
+
+        fig.add_trace(
+            go.Bar(
+                x=x,
+                y=d["Siniestros"],
+                name="Siniestros (USD)" if i == 1 else None,
+                marker_color="#DC2626",
+                text=d["Siniestros"].apply(lambda v: f"{v:,.0f}"),
+                textposition="outside",
+                cliponaxis=False,
+                showlegend=(i == 1),
+                hovertemplate="Año=%{x}<br>Siniestros=%{y:,.0f}<extra></extra>",
+            ),
+            row=i,
+            col=1,
+            secondary_y=False,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=d["Siniestralidad"],
+                name="Siniestralidad (%)" if i == 1 else None,
+                mode="lines+markers+text",
+                line=dict(color="#111827", width=2),
+                marker=dict(size=8),
+                text=d["Siniestralidad"].apply(lambda v: f"{v:.1f}%"),
+                textposition="top center",
+                showlegend=(i == 1),
+                hovertemplate="Año=%{x}<br>Siniestralidad=%{y:.1f}%<extra></extra>",
+            ),
+            row=i,
+            col=1,
+            secondary_y=True,
+        )
+
+        fig.update_yaxes(title_text="USD", row=i, col=1, secondary_y=False)
+        fig.update_yaxes(title_text="%", row=i, col=1, secondary_y=True, rangemode="tozero")
+
+    fig.update_layout(
+        **_layout_exec(title),
+        barmode="group",
+        height=1100,
+        uniformtext_minsize=10,
+        uniformtext_mode="hide",
+    )
+    fig.update_xaxes(title_text="Año", row=3, col=1)
+    return fig
 
 
 def generate_pdf_consolidado_por_pais(
@@ -295,7 +447,6 @@ def generate_pdf_consolidado_por_pais(
     top_ramos: int = 12,
     top_empresas: int = 10,
 ) -> bytes:
-    # Validaciones mínimas según tu esquema
     required = {"País", "Ramo", "Compañía", "Tipo", "USD", "Año"}
     missing = [c for c in required if c not in df_filtrado.columns]
     if missing:
@@ -307,11 +458,9 @@ def generate_pdf_consolidado_por_pais(
     years = sorted(pd.to_numeric(dfx["Año"], errors="coerce").dropna().astype(int).unique().tolist())
     paises = sorted(dfx["País"].astype(str).unique().tolist())
 
-    # PDF base (mantiene tu formato profesional)
     pdf = utils.UltimatePDF()
     pdf.cover_page(report_title, subtitle)
 
-    # Resumen global breve (sin cambiar tu estilo; usa tu capítulo)
     totals_global = _compute_totals_from_long(dfx)
     contexto_global = (
         f"Años: {years}. Países incluidos: {len(paises)}.\n"
@@ -327,7 +476,7 @@ def generate_pdf_consolidado_por_pais(
         prompt_global = (
             "Escribe un resumen ejecutivo global (máximo 8 líneas) del portafolio total, "
             "enfocado en: (1) concentración por países, (2) riesgo por siniestralidad, "
-            "(3) opacidad por No Reporta, (4) 2 prioridades estratégicas."
+            "(3) opacidad por No Reporta (si aplica), (4) 2 prioridades estratégicas."
         )
         try:
             resp = client.chat.completions.create(
@@ -346,7 +495,11 @@ def generate_pdf_consolidado_por_pais(
 
     pdf.executive_summary(resumen_global)
 
-    # Sección por país
+    # Años foco (los que tú pediste)
+    years_focus = [y for y in [2022, 2023, 2024] if y in years]
+    if not years_focus:
+        years_focus = years  # fallback: usa los disponibles
+
     for pais in paises:
         df_pais = dfx[dfx["País"].astype(str) == str(pais)].copy()
         if df_pais.empty:
@@ -355,21 +508,18 @@ def generate_pdf_consolidado_por_pais(
         totals = _compute_totals_from_long(df_pais)
         ramo_stats = build_ramo_stats(df_pais).head(top_ramos)
         top_emp = build_top_empresas(df_pais, top_n=top_empresas)
-
-        # IA por país (resumen + hallazgos + recomendaciones)
         ia = _call_ia_country(api_key, pais, years, totals, ramo_stats, top_emp, instruccion)
 
         pdf.add_page()
         pdf.section_title(f"País: {pais}")
 
-        # KPIs del país (tabla compacta)
         pdf.add_table(
             data=[
                 ["KPI", "Valor"],
                 ["Primas (USD)", f"{totals['Primas']:,.0f}"],
                 ["Siniestros (USD)", f"{totals['Siniestros']:,.0f}"],
-                ["No Reporta (USD)", f"{totals['No Reporta']:,.0f}"],
                 ["Siniestralidad (%)", f"{totals['Siniestralidad']:.1f}%"],
+                ["No Reporta (USD)", f"{totals['No Reporta']:,.0f}"],
             ],
             col_widths=[60, 120],
         )
@@ -379,7 +529,6 @@ def generate_pdf_consolidado_por_pais(
         if ia.get("hallazgos"):
             pdf.key_findings(ia["hallazgos"])
 
-        # Tablas resumen (top empresas + ramos)
         if not top_emp.empty:
             pdf.section_title(f"Top {min(top_empresas, len(top_emp))} Empresas (Referencia)")
             table_emp = [["Compañía", "Primas", "Siniestros", "Siniestr. %"]]
@@ -396,29 +545,70 @@ def generate_pdf_consolidado_por_pais(
 
         if not ramo_stats.empty:
             pdf.section_title(f"Ramos Principales (Top {min(top_ramos, len(ramo_stats))})")
-            table_ramo = [["Ramo", "Primas", "Siniestr. %"]]
+            table_ramo = [["Ramo", "Primas", "Siniestros", "Siniestr. %"]]
             for _, r in ramo_stats.iterrows():
-                table_ramo.append([str(r["Ramo"]), f"{float(r['Primas']):,.0f}", f"{float(r['Siniestralidad']):.1f}%"])
-            pdf.add_table(table_ramo, col_widths=[110, 40, 30])
+                table_ramo.append(
+                    [
+                        str(r["Ramo"]),
+                        f"{float(r['Primas']):,.0f}",
+                        f"{float(r['Siniestros']):,.0f}",
+                        f"{float(r['Siniestralidad']):.1f}%",
+                    ]
+                )
+            pdf.add_table(table_ramo, col_widths=[85, 35, 35, 25])
 
-        # Gráficas por país (guardadas a PNG temporal)
+        # ===== GRÁFICAS (con etiquetas) =====
         tmp_files = []
         try:
-            fig1 = make_fig_primas_ramo(ramo_stats, title=f"{pais} | Primas y No Reporta por Ramo (color=siniestralidad)")
-            fig2 = make_fig_siniestralidad_ramo(ramo_stats, title=f"{pais} | Siniestralidad por Ramo")
+            fig_pr_sin_ramo = make_fig_primas_vs_siniestros_ramo(
+                ramo_stats,
+                title=f"{pais} | Primas vs Siniestros por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+            )
+            fig_sinies = make_fig_siniestralidad_ramo(
+                ramo_stats,
+                title=f"{pais} | Siniestralidad (%) por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+            )
 
-            f1 = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            f2 = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            f1.close()
-            f2.close()
+            # Evolución 2022-2024 en ramos foco
+            foco_year = build_foco_year_stats(df_pais, years_focus=years_focus)
+            fig_evo = make_fig_evolucion_foco(
+                foco_year,
+                title=f"{pais} | Evolución {years_focus[0]}–{years_focus[-1]} (Carga / Cascos / RC)",
+            )
 
-            save_plotly_figure(fig1, f1.name)
-            save_plotly_figure(fig2, f2.name)
-            tmp_files.extend([f1.name, f2.name])
+            f1 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f1.close()
+            f2 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f2.close()
+            f3 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f3.close()
 
-            pdf.section_title("Visualizaciones Clave del País")
-            pdf.add_image_section("Primas/No Reporta por Ramo", f1.name, w=170)
-            pdf.add_image_section("Siniestralidad por Ramo", f2.name, w=170)
+            save_plotly_figure(fig_pr_sin_ramo, f1.name)
+            save_plotly_figure(fig_sinies, f2.name)
+            save_plotly_figure(fig_evo, f3.name)
+
+            tmp_files.extend([f1.name, f2.name, f3.name])
+
+            pdf.section_title("Visualizaciones Clave del País (Etiquetadas)")
+            pdf.add_image_section("Primas vs Siniestros por Ramo", f1.name, w=180)
+            pdf.add_image_section("Siniestralidad (%) por Ramo", f2.name, w=180)
+
+            # Tabla + evolución foco
+            if not foco_year.empty:
+                pdf.section_title(f"Comparativo {years_focus[0]}–{years_focus[-1]} | Ramos Foco (Carga/Cascos/RC)")
+                # Tabla compacta por ramo foco y año
+                table_foco = [["Ramo Foco", "Año", "Primas", "Siniestros", "Siniestr. %"]]
+                for _, r in foco_year.iterrows():
+                    table_foco.append(
+                        [
+                            str(r["RamoFoco"]),
+                            str(int(r["Año"])),
+                            f"{float(r['Primas']):,.0f}",
+                            f"{float(r['Siniestros']):,.0f}",
+                            f"{float(r['Siniestralidad']):.1f}%",
+                        ]
+                    )
+                pdf.add_table(table_foco, col_widths=[35, 20, 45, 45, 35])
+
+            pdf.add_image_section("Evolución anual | Primas vs Siniestros + Siniestralidad", f3.name, w=180)
+
         finally:
             for p in tmp_files:
                 try:
@@ -429,9 +619,8 @@ def generate_pdf_consolidado_por_pais(
         if ia.get("recomendaciones"):
             pdf.recommendations(ia["recomendaciones"])
 
-    # Cierre metodológico corto
     pdf.annex(
-        "Metodología: consolidación por país a partir de Primas/Siniestros/No Reporta (USD) filtrados por Años, Ramos, Afiliación y Compañías. "
+        "Metodología: consolidación por país a partir de Primas/Siniestros (USD) filtrados por Años, Ramos, Afiliación y Compañías. "
         "Las conclusiones de IA se generan sobre agregados (no micro-datos) y deben validarse contra contexto regulatorio/local."
     )
 
