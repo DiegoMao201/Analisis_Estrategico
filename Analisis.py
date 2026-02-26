@@ -7,6 +7,7 @@ import unicodedata
 from openai import OpenAI
 import os
 import tempfile
+import reporting  # <-- NUEVO (archivo reporting.py)
 
 def save_plotly_figure(fig, filename):
     fig.write_image(filename, format="png", width=1000, height=600)
@@ -538,20 +539,26 @@ st.markdown("---")
 with tab3:
     st.subheader("📝 Generación de Informe Ejecutivo (PDF)")
     col_pdf_1, col_pdf_2 = st.columns([3, 1])
-    
+
     with col_pdf_1:
         instruccion = st.text_area("Instrucciones específicas:", "Enfocarse en la alta siniestralidad y riesgos ocultos.")
-    
+
+        st.markdown("#### 📌 Configuración Informe Consolidado por País")
+        c_cfg1, c_cfg2 = st.columns(2)
+        top_ramos = c_cfg1.slider("Top ramos por país", min_value=5, max_value=20, value=12, step=1)
+        top_empresas = c_cfg2.slider("Top empresas (referencia) por país", min_value=5, max_value=20, value=10, step=1)
+
     with col_pdf_2:
-        st.write("") 
+        st.write("")
         st.write("")
         btn_pdf = st.button("📄 GENERAR PDF", type="primary", use_container_width=True)
-    
+        btn_pdf_pais = st.button("🌎 CONSOLIDADO POR PAÍS", use_container_width=True)
+
+    # --- Tu botón actual (no se toca el formato) ---
     if btn_pdf:
         with st.status("🛠️ Construyendo informe...", expanded=True):
             st.write("Analizando datos globales...")
 
-            # Contextos para IA
             contexto_global = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}. {instruccion}"
 
             resumen = generar_seccion_ia(api_key, contexto_global, "resumen")
@@ -560,13 +567,20 @@ with tab3:
             recomendaciones = generar_seccion_ia(api_key, contexto_global, "recomendaciones").split('\n')
             anexos = generar_seccion_ia(api_key, contexto_global, "anexos")
 
-            # Guardar gráficos
+            # Guardar gráficos (si existen)
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile1:
-                save_plotly_figure(fig_bar, tmpfile1.name)
-                bar_chart_path = tmpfile1.name
+                try:
+                    save_plotly_figure(fig_bar, tmpfile1.name)
+                    bar_chart_path = tmpfile1.name
+                except Exception:
+                    bar_chart_path = tmpfile1.name
+
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile2:
-                save_plotly_figure(fig_pie, tmpfile2.name)
-                pie_chart_path = tmpfile2.name
+                try:
+                    save_plotly_figure(fig_pie, tmpfile2.name)
+                    pie_chart_path = tmpfile2.name
+                except Exception:
+                    pie_chart_path = tmpfile2.name
 
             try:
                 st.write("Maquetando documento...")
@@ -585,6 +599,30 @@ with tab3:
                 st.download_button("📥 Descargar PDF", data=pdf_bytes, file_name="Reporte_ALSUM.pdf", mime="application/pdf")
             except Exception as e:
                 st.error(f"Error generando PDF: {e}")
+
+    # --- NUEVO: Consolidado por País ---
+    if btn_pdf_pais:
+        try:
+            with st.status("🛠️ Construyendo consolidado por país...", expanded=True):
+                st.write("Preparando agregados por país...")
+                pdf_bytes = reporting.generate_pdf_consolidado_por_pais(
+                    df_filtrado=df_filtrado,
+                    api_key=api_key,
+                    instruccion=instruccion,
+                    report_title="INFORME CONSOLIDADO POR PAÍS 2026",
+                    subtitle="ALSUM INTELLIGENCE",
+                    top_ramos=top_ramos,
+                    top_empresas=top_empresas,
+                )
+                st.write("✅ Informe por país generado.")
+                st.download_button(
+                    "📥 Descargar PDF Consolidado por País",
+                    data=pdf_bytes,
+                    file_name="Reporte_ALSUM_Consolidado_Pais.pdf",
+                    mime="application/pdf",
+                )
+        except Exception as e:
+            st.error(f"Error generando PDF consolidado por país: {e}")
 
 # === TAB 4: DATA LAB ===
 with tab4:

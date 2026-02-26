@@ -31,92 +31,100 @@ def get_api_key():
 class UltimatePDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # 1. Blindaje contra error de espacio horizontal: Márgenes estrictos
+
         self.set_margins(15, 20, 15)
         self.set_auto_page_break(auto=True, margin=15)
-        
-        # 2. Carga de fuentes (Asegúrate de que la carpeta fonts y el TTF existan)
-        # Si no existe, FPDF usará las fuentes por defecto que pueden fallar con tildes.
+
+        # === Fuentes Unicode (carpeta fonts/) ===
+        # Intentar variantes reales si existen (mejor render).
         try:
-            self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
-            self.add_font('DejaVu', 'B', 'fonts/DejaVuSans.ttf', uni=True)
-            self.add_font('DejaVu', 'I', 'fonts/DejaVuSans.ttf', uni=True)
-            self.font_family_base = 'DejaVu'
+            font_regular = get_file_path("fonts/DejaVuSans.ttf")
+            font_bold = get_file_path("fonts/DejaVuSans-Bold.ttf")
+            font_italic = get_file_path("fonts/DejaVuSans-Oblique.ttf")
+
+            # Fallback si no existen variantes
+            if not os.path.exists(font_regular):
+                raise FileNotFoundError(f"No existe: {font_regular}")
+
+            self.add_font("DejaVu", "", font_regular, uni=True)
+
+            if os.path.exists(font_bold):
+                self.add_font("DejaVu", "B", font_bold, uni=True)
+            else:
+                self.add_font("DejaVu", "B", font_regular, uni=True)
+
+            if os.path.exists(font_italic):
+                self.add_font("DejaVu", "I", font_italic, uni=True)
+            else:
+                self.add_font("DejaVu", "I", font_regular, uni=True)
+
+            self.font_family_base = "DejaVu"
         except Exception as e:
-            print(f"⚠️ Advertencia: No se encontró la fuente DejaVu. Usando Arial. ({e})")
-            self.font_family_base = 'Arial'
-            
-        self.set_font(self.font_family_base, '', 11)
+            print(f"⚠️ Advertencia: No se encontró fuente Unicode en /fonts. Usando Arial. ({e})")
+            self.font_family_base = "Arial"
+
+        self.set_font(self.font_family_base, "", 11)
 
     def _clean_text(self, text):
-        """
-        Sanitiza el texto generado por la IA para evitar que rompa el PDF.
-        Elimina caracteres invisibles conflictivos y corta palabras absurdamente largas.
-        """
-        if not text: return ""
+        if not text:
+            return ""
         text = str(text)
-        # Limpieza de espacios no separables que rompen el multi_cell
-        text = text.replace('\xa0', ' ').replace('\u200b', '').replace('\t', '    ')
-        
-        # Prevenir el error "Not enough horizontal space..." cortando palabras gigantes
-        words = text.split(' ')
-        # 80 caracteres sin espacios es el límite seguro para una página A4
-        safe_words = [w[:80] + '...' if len(w) > 80 else w for w in words] 
-        return ' '.join(safe_words)
+        text = text.replace("\xa0", " ").replace("\u200b", "").replace("\t", "    ")
+        words = text.split(" ")
+        safe_words = [w[:80] + "..." if len(w) > 80 else w for w in words]
+        return " ".join(safe_words)
 
     def header(self):
         if self.page_no() > 1:
-            self.set_font(self.font_family_base, 'B', 9)
+            self.set_font(self.font_family_base, "B", 9)
             self.set_text_color(100, 100, 100)
-            self.cell(0, 10, 'ALSUM - INTELIGENCIA DE NEGOCIOS 2026', 0, 0, 'L')
-            self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, 'R')
-            self.set_draw_color(0, 74, 143) # Azul Corporativo ALSUM
+            self.cell(0, 10, "ALSUM - INTELIGENCIA DE NEGOCIOS 2026", 0, 0, "L")
+            self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, "R")
+            self.set_draw_color(0, 74, 143)
             self.set_line_width(0.5)
             self.line(15, 20, 195, 20)
             self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font(self.font_family_base, 'I', 8)
+        self.set_font(self.font_family_base, "I", 8)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+        self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
 
     def cover_page(self, title, subtitle):
         self.add_page()
-        self.set_fill_color(0, 74, 143) # Azul corporativo profundo
-        self.rect(0, 0, 210, 297, 'F') 
+        self.set_fill_color(0, 74, 143)
+        self.rect(0, 0, 210, 297, "F")
         self.set_text_color(255, 255, 255)
-        self.set_font(self.font_family_base, 'B', 40)
+        self.set_font(self.font_family_base, "B", 40)
         self.ln(70)
-        self.cell(0, 20, "ALSUM", 0, 1, 'C')
-        
-        self.set_font(self.font_family_base, '', 14)
+        self.cell(0, 20, "ALSUM", 0, 1, "C")
+
+        self.set_font(self.font_family_base, "", 14)
         self.set_text_color(200, 215, 230)
-        self.cell(0, 10, "ESTRATEGIA & MERCADO", 0, 1, 'C')
-        
+        self.cell(0, 10, "ESTRATEGIA & MERCADO", 0, 1, "C")
+
         self.ln(40)
         self.set_text_color(255, 255, 255)
-        self.set_font(self.font_family_base, 'B', 28)
-        self.multi_cell(0, 15, self._clean_text(title), 0, 'C')
-        
+        self.set_font(self.font_family_base, "B", 28)
+        self.multi_cell(0, 15, self._clean_text(title), 0, "C")
+
         self.ln(15)
-        self.set_font(self.font_family_base, 'I', 16)
+        self.set_font(self.font_family_base, "I", 16)
         self.set_text_color(220, 220, 220)
-        self.multi_cell(0, 10, self._clean_text(subtitle), 0, 'C')
+        self.multi_cell(0, 10, self._clean_text(subtitle), 0, "C")
 
     def chapter_body(self, text):
-        self.set_font(self.font_family_base, '', 11)
+        self.set_font(self.font_family_base, "", 11)
         self.set_text_color(50, 50, 50)
-        # Usamos multi_cell con un ancho explícito basado en los márgenes (210 - 15 - 15 = 180)
         self.multi_cell(180, 6, self._clean_text(text))
         self.ln(4)
 
     def section_title(self, title):
-        self.set_font(self.font_family_base, 'B', 16)
+        self.set_font(self.font_family_base, "B", 16)
         self.set_text_color(0, 74, 143)
         self.ln(8)
-        self.cell(0, 10, self._clean_text(title), 0, 1, 'L')
-        # Línea sutil debajo del título
+        self.cell(0, 10, self._clean_text(title), 0, 1, "L")
         self.set_draw_color(200, 200, 200)
         self.set_line_width(0.2)
         self.line(self.get_x(), self.get_y(), 195, self.get_y())
@@ -124,47 +132,44 @@ class UltimatePDF(FPDF):
 
     def executive_summary(self, text):
         self.add_page()
-        self.set_font(self.font_family_base, 'B', 18)
+        self.set_font(self.font_family_base, "B", 18)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 12, "Resumen Ejecutivo", 0, 1, 'L')
+        self.cell(0, 12, "Resumen Ejecutivo", 0, 1, "L")
         self.ln(2)
-        
-        self.set_font(self.font_family_base, '', 12)
+
+        self.set_font(self.font_family_base, "", 12)
         self.set_text_color(40, 40, 40)
-        # Interlineado un poco más amplio para lectura ejecutiva
         self.multi_cell(180, 7, self._clean_text(text))
         self.ln(8)
 
     def key_findings(self, findings):
-        self.set_font(self.font_family_base, 'B', 14)
+        self.set_font(self.font_family_base, "B", 14)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 10, "Hallazgos Clave", 0, 1, 'L')
+        self.cell(0, 10, "Hallazgos Clave", 0, 1, "L")
         self.ln(2)
-        
-        self.set_font(self.font_family_base, '', 11)
+
+        self.set_font(self.font_family_base, "", 11)
         self.set_text_color(40, 40, 40)
         for point in findings:
             clean_point = self._clean_text(point)
-            # Evitar viñetas vacías generadas por la IA
             if clean_point.strip():
-                # Simulamos un padding para la viñeta
-                self.cell(5, 7, "•", 0, 0, 'L')
+                self.cell(5, 7, "•", 0, 0, "L")
                 self.multi_cell(175, 7, clean_point)
                 self.ln(2)
         self.ln(5)
 
     def recommendations(self, recs):
-        self.set_font(self.font_family_base, 'B', 14)
+        self.set_font(self.font_family_base, "B", 14)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, 'L')
+        self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, "L")
         self.ln(2)
-        
-        self.set_font(self.font_family_base, '', 11)
+
+        self.set_font(self.font_family_base, "", 11)
         self.set_text_color(40, 40, 40)
         for rec in recs:
             clean_rec = self._clean_text(rec)
             if clean_rec.strip():
-                self.cell(5, 7, "→", 0, 0, 'L')
+                self.cell(5, 7, "→", 0, 0, "L")
                 self.multi_cell(175, 7, clean_rec)
                 self.ln(2)
         self.ln(5)
@@ -173,62 +178,57 @@ class UltimatePDF(FPDF):
         self.section_title(title)
         self.chapter_body(content)
 
-    def add_table(self, data, col_widths=None, align='L'):
-        self.set_font(self.font_family_base, '', 9)
+    def add_table(self, data, col_widths=None, align="L"):
+        self.set_font(self.font_family_base, "", 9)
         if not data:
             self.cell(0, 10, "Sin datos disponibles.", 0, 1)
             return
-            
+
         n_cols = len(data[0])
-        # Aseguramos que el ancho total de la tabla no exceda los 180mm disponibles
         if not col_widths:
             col_width = int(180 / n_cols)
             col_widths = [col_width] * n_cols
-            
-        # Dibujar tabla
+
         for row_idx, row in enumerate(data):
-            # Fila de encabezado en gris claro si es la primera
             if row_idx == 0:
                 self.set_fill_color(240, 240, 240)
-                self.set_font(self.font_family_base, 'B', 9)
+                self.set_font(self.font_family_base, "B", 9)
             else:
                 self.set_fill_color(255, 255, 255)
-                self.set_font(self.font_family_base, '', 9)
-                
+                self.set_font(self.font_family_base, "", 9)
+
             for i, datum in enumerate(row):
                 text = self._clean_text(str(datum))
-                # Truncar drásticamente para evitar errores de renderizado en celdas
-                max_chars = max(3, int(col_widths[i] * 0.45)) 
+                max_chars = max(3, int(col_widths[i] * 0.45))
                 if len(text) > max_chars:
-                    text = text[:max_chars - 3] + "..."
+                    text = text[: max_chars - 3] + "..."
                 self.cell(col_widths[i], 8, text, border=1, align=align, fill=True)
             self.ln(8)
         self.ln(6)
 
     def add_image_section(self, title, image_path, w=170, h=0):
         self.section_title(title)
-        # Limitamos el ancho al tamaño máximo de la página restando márgenes
-        if w > 180: w = 180
-        
+        if w > 180:
+            w = 180
+
         if os.path.exists(image_path):
-            # Centrar la imagen en la página si w < 180
             x_pos = 15 + ((180 - w) / 2)
             self.image(image_path, x=x_pos, w=w, h=h)
         else:
-            self.set_font(self.font_family_base, 'I', 10)
+            self.set_font(self.font_family_base, "I", 10)
             self.set_text_color(255, 0, 0)
             self.cell(0, 10, "Error: Imagen de gráfico no encontrada o no pudo ser generada.", 0, 1)
-            
+
         self.ln(8)
 
     def annex(self, text):
         self.add_page()
-        self.set_font(self.font_family_base, 'B', 16)
+        self.set_font(self.font_family_base, "B", 16)
         self.set_text_color(100, 100, 100)
-        self.cell(0, 10, "Anexos & Metodología", 0, 1, 'L')
+        self.cell(0, 10, "Anexos & Metodología", 0, 1, "L")
         self.ln(4)
-        
-        self.set_font(self.font_family_base, '', 10)
+
+        self.set_font(self.font_family_base, "", 10)
         self.set_text_color(80, 80, 80)
         self.multi_cell(180, 6, self._clean_text(text))
         self.ln(5)
