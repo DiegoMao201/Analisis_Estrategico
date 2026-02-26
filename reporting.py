@@ -99,69 +99,69 @@ def _get_color_siniestralidad(ratio: float) -> str:
 
 
 def _layout_exec(title: str) -> dict:
-    # IMPORTANTE: En export PNG (kaleido) la leyenda se puede recortar si queda "afuera".
-    # La dejamos DENTRO, arriba, con margen superior suficiente.
     return dict(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=22, color="#0f172a")),
         template="plotly_white",
         font=dict(family="DejaVu Sans, Arial", size=14, color="#0f172a"),
-        margin=dict(l=55, r=35, t=120, b=95),
+        margin=dict(l=60, r=40, t=130, b=105),
         legend=dict(
             orientation="h",
             x=0.0,
             y=0.995,
             xanchor="left",
             yanchor="top",
-            bgcolor="rgba(255,255,255,0.85)",
+            bgcolor="rgba(255,255,255,0.90)",
             bordercolor="rgba(148,163,184,0.6)",
             borderwidth=1,
             title_text="",
-            font=dict(size=13),
+            font=dict(size=13, color="#0f172a"),
         ),
     )
 
 
+def _add_bar_value_annotations(fig: go.Figure, x_vals, y_vals, *, fmt: str, row=None, col=None, yshift: int = 10):
+    """
+    Etiquetas garantizadas en export PNG (Kaleido).
+    fmt: "usd" o "pct"
+    """
+    for x, y in zip(list(x_vals), list(y_vals)):
+        try:
+            y_num = float(y)
+        except Exception:
+            continue
+
+        if fmt == "pct":
+            label = f"{y_num:.1f}%"
+        else:
+            label = f"{y_num:,.0f}"
+
+        fig.add_annotation(
+            x=x,
+            y=y_num,
+            text=label,
+            showarrow=False,
+            yshift=yshift,
+            font=dict(size=12, color="#0f172a"),
+            row=row,
+            col=col,
+        )
+
+
 def make_fig_primas_vs_siniestros_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Figure:
-    # Gráfico explícito Primas vs Siniestros (con etiquetas y ejes formateados)
     if ramo_stats.empty:
         return go.Figure(layout=_layout_exec(title))
 
     d = ramo_stats.copy().sort_values("Primas", ascending=False).head(15)
-
     y_max = float(max(d["Primas"].max(), d["Siniestros"].max()))
-    y_range_top = y_max * 1.25 if y_max > 0 else 1
+    y_range_top = y_max * 1.30 if y_max > 0 else 1
 
     fig = go.Figure()
+    fig.add_trace(go.Bar(x=d["Ramo"], y=d["Primas"], name="Primas (USD)", marker_color="#004A8F"))
+    fig.add_trace(go.Bar(x=d["Ramo"], y=d["Siniestros"], name="Siniestros (USD)", marker_color="#DC2626"))
 
-    fig.add_trace(
-        go.Bar(
-            x=d["Ramo"],
-            y=d["Primas"],
-            name="Primas (USD)",
-            marker_color="#004A8F",
-            text=d["Primas"],
-            texttemplate="%{text:,.0f}",
-            textposition="outside",
-            textfont=dict(size=12, color="#0f172a"),
-            cliponaxis=False,
-            hovertemplate="Ramo=%{x}<br>Primas=%{y:,.0f} USD<extra></extra>",
-        )
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=d["Ramo"],
-            y=d["Siniestros"],
-            name="Siniestros (USD)",
-            marker_color="#DC2626",
-            text=d["Siniestros"],
-            texttemplate="%{text:,.0f}",
-            textposition="outside",
-            textfont=dict(size=12, color="#0f172a"),
-            cliponaxis=False,
-            hovertemplate="Ramo=%{x}<br>Siniestros=%{y:,.0f} USD<extra></extra>",
-        )
-    )
+    # Etiquetas “a prueba de export”
+    _add_bar_value_annotations(fig, d["Ramo"], d["Primas"], fmt="usd", yshift=12)
+    _add_bar_value_annotations(fig, d["Ramo"], d["Siniestros"], fmt="usd", yshift=28)
 
     fig.update_layout(
         **_layout_exec(title),
@@ -176,9 +176,7 @@ def make_fig_primas_vs_siniestros_ramo(ramo_stats: pd.DataFrame, title: str) -> 
             zerolinecolor="rgba(148,163,184,0.9)",
             automargin=True,
         ),
-        height=620,
-        uniformtext_minsize=10,
-        uniformtext_mode="hide",
+        height=650,
     )
     return fig
 
@@ -191,23 +189,13 @@ def make_fig_siniestralidad_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Fig
     d["Color"] = d["Siniestralidad"].apply(_get_color_siniestralidad)
 
     y_max = float(d["Siniestralidad"].max()) if not d.empty else 0.0
-    y_range_top = max(10.0, y_max * 1.25)  # deja espacio para etiquetas
+    y_range_top = max(10.0, y_max * 1.35)
 
     fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=d["Ramo"],
-            y=d["Siniestralidad"],
-            name="Siniestralidad (%)",
-            marker_color=d["Color"],
-            text=d["Siniestralidad"],
-            texttemplate="%{text:.1f}%",
-            textposition="outside",
-            textfont=dict(size=12, color="#0f172a"),
-            cliponaxis=False,
-            hovertemplate="Ramo=%{x}<br>Siniestralidad=%{y:.1f}%<extra></extra>",
-        )
-    )
+    fig.add_trace(go.Bar(x=d["Ramo"], y=d["Siniestralidad"], name="Siniestralidad (%)", marker_color=d["Color"]))
+
+    # Etiquetas “a prueba de export”
+    _add_bar_value_annotations(fig, d["Ramo"], d["Siniestralidad"], fmt="pct", yshift=12)
 
     fig.update_layout(
         **_layout_exec(title),
@@ -220,9 +208,7 @@ def make_fig_siniestralidad_ramo(ramo_stats: pd.DataFrame, title: str) -> go.Fig
             zerolinecolor="rgba(148,163,184,0.9)",
             automargin=True,
         ),
-        height=600,
-        uniformtext_minsize=10,
-        uniformtext_mode="hide",
+        height=650,
     )
     return fig
 
@@ -249,68 +235,17 @@ def make_fig_evolucion_foco(foco_year_stats: pd.DataFrame, title: str) -> go.Fig
         d = foco_year_stats[foco_year_stats["RamoFoco"] == ramo].copy()
         x = d["Año"].astype(int).astype(str)
 
-        # Rango para que no se corten etiquetas en barras
         y_max = float(max(d["Primas"].max(), d["Siniestros"].max())) if not d.empty else 0.0
-        y_range_top = y_max * 1.28 if y_max > 0 else 1.0
+        y_range_top = y_max * 1.35 if y_max > 0 else 1.0
 
-        # Mantener name SIEMPRE (aunque showlegend False), para evitar leyendas “mudas” en export
-        fig.add_trace(
-            go.Bar(
-                x=x,
-                y=d["Primas"],
-                name="Primas (USD)",
-                marker_color="#004A8F",
-                text=d["Primas"],
-                texttemplate="%{text:,.0f}",
-                textposition="outside",
-                textfont=dict(size=11),
-                cliponaxis=False,
-                showlegend=(i == 1),
-                hovertemplate="Año=%{x}<br>Primas=%{y:,.0f} USD<extra></extra>",
-            ),
-            row=i,
-            col=1,
-            secondary_y=False,
-        )
+        fig.add_trace(go.Bar(x=x, y=d["Primas"], name="Primas (USD)", marker_color="#004A8F", showlegend=(i == 1)), row=i, col=1, secondary_y=False)
+        fig.add_trace(go.Bar(x=x, y=d["Siniestros"], name="Siniestros (USD)", marker_color="#DC2626", showlegend=(i == 1)), row=i, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=x, y=d["Siniestralidad"], name="Siniestralidad (%)", mode="lines+markers", line=dict(color="#111827", width=2), marker=dict(size=8, color="#111827"), showlegend=(i == 1)), row=i, col=1, secondary_y=True)
 
-        fig.add_trace(
-            go.Bar(
-                x=x,
-                y=d["Siniestros"],
-                name="Siniestros (USD)",
-                marker_color="#DC2626",
-                text=d["Siniestros"],
-                texttemplate="%{text:,.0f}",
-                textposition="outside",
-                textfont=dict(size=11),
-                cliponaxis=False,
-                showlegend=(i == 1),
-                hovertemplate="Año=%{x}<br>Siniestros=%{y:,.0f} USD<extra></extra>",
-            ),
-            row=i,
-            col=1,
-            secondary_y=False,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=d["Siniestralidad"],
-                name="Siniestralidad (%)",
-                mode="lines+markers+text",
-                line=dict(color="#111827", width=2),
-                marker=dict(size=8, color="#111827"),
-                text=d["Siniestralidad"],
-                texttemplate="%{text:.1f}%",
-                textposition="top center",
-                textfont=dict(size=11),
-                showlegend=(i == 1),
-                hovertemplate="Año=%{x}<br>Siniestralidad=%{y:.1f}%<extra></extra>",
-            ),
-            row=i,
-            col=1,
-            secondary_y=True,
-        )
+        # Etiquetas “a prueba de export” por subplot
+        _add_bar_value_annotations(fig, x, d["Primas"], fmt="usd", row=i, col=1, yshift=12)
+        _add_bar_value_annotations(fig, x, d["Siniestros"], fmt="usd", row=i, col=1, yshift=28)
+        _add_bar_value_annotations(fig, x, d["Siniestralidad"], fmt="pct", row=i, col=1, yshift=10)
 
         fig.update_yaxes(
             title_text="USD",
@@ -336,12 +271,9 @@ def make_fig_evolucion_foco(foco_year_stats: pd.DataFrame, title: str) -> go.Fig
         **_layout_exec(title),
         barmode="group",
         bargap=0.25,
-        height=1250,
-        uniformtext_minsize=10,
-        uniformtext_mode="hide",
+        height=1300,
     )
     fig.update_xaxes(title_text="Año", row=3, col=1)
-
     return fig
 
 
