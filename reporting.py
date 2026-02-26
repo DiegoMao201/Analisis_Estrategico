@@ -1,6 +1,7 @@
 import os
 import tempfile
 from typing import Dict, List
+import re  # <-- NUEVO
 
 import pandas as pd
 import plotly.graph_objects as go
