@@ -9,6 +9,12 @@ from fuzzywuzzy import process, fuzz
 import openai
 from openai import OpenAI
 
+# ✅ NUEVO: para leer tamaño de imágenes y escalarlas a la página (sin Pillow)
+try:
+    import matplotlib.image as mpimg
+except Exception:
+    mpimg = None
+
 # ==========================================
 # 1. GESTIÓN DE SISTEMA Y RUTAS
 # ==========================================
@@ -35,14 +41,15 @@ class UltimatePDF(FPDF):
         self.set_margins(15, 20, 15)
         self.set_auto_page_break(auto=True, margin=15)
 
+        # ✅ NUEVO: etiqueta de periodo (para header profesional, sin fechas “raras”)
+        self.period_label = ""
+
         # === Fuentes Unicode (carpeta fonts/) ===
-        # Intentar variantes reales si existen (mejor render).
         try:
             font_regular = get_file_path("fonts/DejaVuSans.ttf")
             font_bold = get_file_path("fonts/DejaVuSans-Bold.ttf")
             font_italic = get_file_path("fonts/DejaVuSans-Oblique.ttf")
 
-            # Fallback si no existen variantes
             if not os.path.exists(font_regular):
                 raise FileNotFoundError(f"No existe: {font_regular}")
 
@@ -65,6 +72,18 @@ class UltimatePDF(FPDF):
 
         self.set_font(self.font_family_base, "", 11)
 
+    # ✅ NUEVO: control fino para evitar “saltos feos” y páginas vacías
+    def _ensure_space(self, needed_mm: float) -> None:
+        try:
+            trigger = getattr(self, "page_break_trigger", None)
+            if trigger is None:
+                trigger = self.h - self.b_margin
+            if self.get_y() + float(needed_mm) > float(trigger):
+                self.add_page()
+        except Exception:
+            # fallback: no rompe
+            pass
+
     def _clean_text(self, text):
         if not text:
             return ""
@@ -78,14 +97,17 @@ class UltimatePDF(FPDF):
         if self.page_no() > 1:
             self.set_font(self.font_family_base, "B", 9)
             self.set_text_color(100, 100, 100)
-            # Antes: "ALSUM - INTELIGENCIA DE NEGOCIOS 2026"
-            # Evita año hardcodeado (el periodo real lo imprime el reporte por país)
+
             self.cell(0, 10, "ALSUM - INTELIGENCIA DE NEGOCIOS", 0, 0, "L")
-            self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, "R")
+
+            # ✅ Antes mostraba la fecha del sistema (puede salir 2026). Ahora: PERIODO del análisis.
+            right = f"Periodo: {self.period_label}" if self.period_label else ""
+            self.cell(0, 10, right, 0, 1, "R")
+
             self.set_draw_color(0, 74, 143)
             self.set_line_width(0.5)
             self.line(15, 20, 195, 20)
-            self.ln(10)
+            self.ln(8)
 
     def footer(self):
         self.set_y(-15)
@@ -106,12 +128,12 @@ class UltimatePDF(FPDF):
         self.set_text_color(200, 215, 230)
         self.cell(0, 10, "ESTRATEGIA & MERCADO", 0, 1, "C")
 
-        self.ln(40)
+        self.ln(35)
         self.set_text_color(255, 255, 255)
         self.set_font(self.font_family_base, "B", 28)
         self.multi_cell(0, 15, self._clean_text(title), 0, "C")
 
-        self.ln(15)
+        self.ln(12)
         self.set_font(self.font_family_base, "I", 16)
         self.set_text_color(220, 220, 220)
         self.multi_cell(0, 10, self._clean_text(subtitle), 0, "C")
@@ -120,17 +142,19 @@ class UltimatePDF(FPDF):
         self.set_font(self.font_family_base, "", 11)
         self.set_text_color(50, 50, 50)
         self.multi_cell(180, 6, self._clean_text(text))
-        self.ln(4)
+        self.ln(3)
 
-    def section_title(self, title):
-        self.set_font(self.font_family_base, "B", 16)
+    # ✅ Ajuste: menos aire (más ejecutivo/compacto)
+    def section_title(self, title, tight: bool = False):
+        self._ensure_space(14 if tight else 18)
+        self.set_font(self.font_family_base, "B", 15 if tight else 16)
         self.set_text_color(0, 74, 143)
-        self.ln(8)
-        self.cell(0, 10, self._clean_text(title), 0, 1, "L")
+        self.ln(4 if tight else 7)
+        self.cell(0, 9 if tight else 10, self._clean_text(title), 0, 1, "L")
         self.set_draw_color(200, 200, 200)
         self.set_line_width(0.2)
         self.line(self.get_x(), self.get_y(), 195, self.get_y())
-        self.ln(4)
+        self.ln(2 if tight else 4)
 
     def executive_summary(self, text):
         self.add_page()
@@ -142,54 +166,58 @@ class UltimatePDF(FPDF):
         self.set_font(self.font_family_base, "", 12)
         self.set_text_color(40, 40, 40)
         self.multi_cell(180, 7, self._clean_text(text))
-        self.ln(8)
+        self.ln(6)
 
     def key_findings(self, findings):
         self.set_font(self.font_family_base, "B", 14)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 10, "Hallazgos Clave", 0, 1, "L")
-        self.ln(2)
+        self.cell(0, 9, "Hallazgos Clave", 0, 1, "L")
+        self.ln(1)
 
         self.set_font(self.font_family_base, "", 11)
         self.set_text_color(40, 40, 40)
         for point in findings:
             clean_point = self._clean_text(point)
             if clean_point.strip():
-                self.cell(5, 7, "•", 0, 0, "L")
-                self.multi_cell(175, 7, clean_point)
-                self.ln(2)
-        self.ln(5)
+                self.cell(5, 6, "•", 0, 0, "L")
+                self.multi_cell(175, 6, clean_point)
+                self.ln(1)
+        self.ln(3)
 
     def recommendations(self, recs):
         self.set_font(self.font_family_base, "B", 14)
         self.set_text_color(0, 74, 143)
-        self.cell(0, 10, "Recomendaciones Estratégicas", 0, 1, "L")
-        self.ln(2)
+        self.cell(0, 9, "Recomendaciones Estratégicas", 0, 1, "L")
+        self.ln(1)
 
         self.set_font(self.font_family_base, "", 11)
         self.set_text_color(40, 40, 40)
         for rec in recs:
             clean_rec = self._clean_text(rec)
             if clean_rec.strip():
-                self.cell(5, 7, "→", 0, 0, "L")
-                self.multi_cell(175, 7, clean_rec)
-                self.ln(2)
-        self.ln(5)
+                self.cell(5, 6, "→", 0, 0, "L")
+                self.multi_cell(175, 6, clean_rec)
+                self.ln(1)
+        self.ln(3)
 
     def add_section(self, title, content):
-        self.section_title(title)
+        self.section_title(title, tight=False)
         self.chapter_body(content)
 
-    def add_table(self, data, col_widths=None, align="L"):
+    # ✅ Ajuste: tabla más compacta y evita cortes raros
+    def add_table(self, data, col_widths=None, align="L", row_h: int = 7, after_space: int = 4):
         self.set_font(self.font_family_base, "", 9)
         if not data:
-            self.cell(0, 10, "Sin datos disponibles.", 0, 1)
+            self.cell(0, 8, "Sin datos disponibles.", 0, 1)
             return
 
         n_cols = len(data[0])
         if not col_widths:
             col_width = int(180 / n_cols)
             col_widths = [col_width] * n_cols
+
+        # espacio aproximado mínimo para header + 2 filas
+        self._ensure_space(max(18, row_h * 3))
 
         for row_idx, row in enumerate(data):
             if row_idx == 0:
@@ -204,36 +232,72 @@ class UltimatePDF(FPDF):
                 max_chars = max(3, int(col_widths[i] * 0.45))
                 if len(text) > max_chars:
                     text = text[: max_chars - 3] + "..."
-                self.cell(col_widths[i], 8, text, border=1, align=align, fill=True)
-            self.ln(8)
-        self.ln(6)
+                self.cell(col_widths[i], row_h, text, border=1, align=align, fill=True)
+            self.ln(row_h)
 
-    def add_image_section(self, title, image_path, w=170, h=0):
-        self.section_title(title)
+        self.ln(after_space)
+
+    # ✅ NUEVO: calcula relación de aspecto (alto/ancho) para escalar y que nunca “se vaya” abajo
+    def _img_ratio(self, image_path: str) -> float:
+        if not mpimg or not os.path.exists(image_path):
+            return 0.6  # fallback razonable
+        try:
+            arr = mpimg.imread(image_path)
+            h_px = float(arr.shape[0])
+            w_px = float(arr.shape[1])
+            if w_px <= 0:
+                return 0.6
+            return h_px / w_px
+        except Exception:
+            return 0.6
+
+    # ✅ Ajuste crítico: imagen SIEMPRE cabe; si no, agrega página o reduce tamaño
+    def add_image_section(self, title, image_path, w=170, h=0, tight: bool = True):
+        # reservamos espacio para título + un mínimo de imagen
+        self._ensure_space(35)
+
+        self.section_title(title, tight=tight)
         if w > 180:
             w = 180
 
-        if os.path.exists(image_path):
-            x_pos = 15 + ((180 - w) / 2)
-            self.image(image_path, x=x_pos, w=w, h=h)
-        else:
+        if not os.path.exists(image_path):
             self.set_font(self.font_family_base, "I", 10)
             self.set_text_color(255, 0, 0)
-            self.cell(0, 10, "Error: Imagen de gráfico no encontrada o no pudo ser generada.", 0, 1)
+            self.cell(0, 8, "Error: Imagen de gráfico no encontrada o no pudo ser generada.", 0, 1)
+            self.ln(4)
+            return
 
-        self.ln(8)
+        # calcular alto según ratio y ajustar a espacio disponible
+        ratio = self._img_ratio(image_path)
+        h_calc = (w * ratio) if not h else float(h)
+
+        avail = (self.h - self.b_margin) - self.get_y() - 2
+        if avail < 35:
+            self.add_page()
+            self.section_title(title, tight=tight)
+            avail = (self.h - self.b_margin) - self.get_y() - 2
+
+        if h_calc > avail and avail > 10:
+            # Escala proporcional para que quepa
+            scale = avail / h_calc
+            w = max(120, w * scale)
+            h_calc = avail
+
+        x_pos = 15 + ((180 - w) / 2)
+        self.image(image_path, x=x_pos, w=w, h=h_calc)
+        self.ln(6)
 
     def annex(self, text):
         self.add_page()
         self.set_font(self.font_family_base, "B", 16)
         self.set_text_color(100, 100, 100)
         self.cell(0, 10, "Anexos & Metodología", 0, 1, "L")
-        self.ln(4)
+        self.ln(3)
 
         self.set_font(self.font_family_base, "", 10)
         self.set_text_color(80, 80, 80)
         self.multi_cell(180, 6, self._clean_text(text))
-        self.ln(5)
+        self.ln(4)
 
 # ==========================================
 # 3. CARGA DE DATOS (MÉTODO "SNIFFER" + LOW_MEMORY)

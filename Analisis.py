@@ -16,7 +16,7 @@ def save_plotly_figure(fig, filename):
 # 0. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
 # ==========================================
 st.set_page_config(
-    page_title="ALSUM 2026 | Strategic Command", 
+    page_title="ALSUM 2024 | Strategic Command", 
     layout="wide", 
     page_icon="🦅",
     initial_sidebar_state="expanded"
@@ -560,7 +560,6 @@ with tab3:
             st.write("Analizando datos globales...")
 
             contexto_global = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}. {instruccion}"
-
             resumen = generar_seccion_ia(api_key, contexto_global, "resumen")
             hallazgos = generar_seccion_ia(api_key, contexto_global, "hallazgos").split('\n')
             analisis = generar_seccion_ia(api_key, contexto_global, "analisis")
@@ -585,13 +584,21 @@ with tab3:
             try:
                 st.write("Maquetando documento...")
                 pdf = utils.UltimatePDF()
-                pdf.cover_page("INFORME ESTRATÉGICO 2026", "ALSUM INTELLIGENCE")
+                # periodo desde el filtro actual
+                years_lbl = reporting._years_label(sel_anios) if "sel_anios" in globals() else "2024"
+                pdf.period_label = years_lbl
+
+                pdf.cover_page(f"INFORME ESTRATÉGICO {years_lbl}", f"ALSUM | Análisis {years_lbl}")
                 pdf.executive_summary(resumen)
                 pdf.key_findings([h for h in hallazgos if h.strip()])
                 pdf.add_section("Análisis Detallado", analisis)
-                pdf.section_title("Visualizaciones Clave")
-                pdf.add_image_section("Desempeño por Ramo", bar_chart_path)
-                pdf.add_image_section("Distribución de Flujos", pie_chart_path)
+                pdf.section_title("Visualizaciones Clave", tight=True)
+                pdf.add_image_section("Desempeño por Ramo", bar_chart_path, w=175, tight=True)
+
+                # ✅ No incluir secciones/labels con “No Reporta” en el PDF global
+                # (si quieres mantener la torta, debe ser solo Primas/Siniestros)
+                # pdf.add_image_section("Distribución de Flujos", pie_chart_path, w=175, tight=True)
+
                 pdf.recommendations([r for r in recomendaciones if r.strip()])
                 pdf.annex(anexos)
                 pdf_bytes = bytes(pdf.output(dest='S'))

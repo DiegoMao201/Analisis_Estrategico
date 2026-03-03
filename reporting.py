@@ -783,6 +783,7 @@ def generate_pdf_consolidado_por_pais(
     final_subtitle = f"ALSUM | Análisis {years_lbl}"
 
     pdf = utils.UltimatePDF()
+    pdf.period_label = years_lbl  # ✅ header sin fecha “2026”
     pdf.cover_page(final_title, final_subtitle)
 
     totals_global = _compute_totals_from_long(dfx)
@@ -835,10 +836,12 @@ def generate_pdf_consolidado_por_pais(
         top_emp = build_top_empresas(df_pais, top_n=top_empresas)
         ia = _call_ia_country(api_key, pais, years, totals, ramo_stats, top_emp, instruccion)
 
+        # =========================
+        # PÁGINA 1 (país): KPIs + IA + Tablas (compacto)
+        # =========================
         pdf.add_page()
-        pdf.section_title(f"País: {pais} | Periodo: {years_lbl}")
+        pdf.section_title(f"País: {pais} | Periodo: {years_lbl}", tight=True)
 
-        # KPI table: cada cifra explícita con periodo
         pdf.add_table(
             data=[
                 ["KPI", "Valor"],
@@ -847,15 +850,17 @@ def generate_pdf_consolidado_por_pais(
                 [f"Siniestralidad (%) | {years_lbl}", f"{totals['Siniestralidad']:.1f}%"],
             ],
             col_widths=[80, 100],
+            row_h=7,
+            after_space=3,
         )
 
-        pdf.add_section("Resumen Ejecutivo del País (con periodo explícito)", ia.get("resumen", ""))
+        pdf.add_section("Resumen Ejecutivo (Periodo explícito)", ia.get("resumen", ""))
 
         if ia.get("hallazgos"):
             pdf.key_findings(ia["hallazgos"])
 
         if not top_emp.empty:
-            pdf.section_title(f"Top {min(top_empresas, len(top_emp))} Empresas (Referencia) | {years_lbl}")
+            pdf.section_title(f"Top Empresas (Referencia) | {years_lbl}", tight=True)
             table_emp = [["Compañía", f"Primas ({years_lbl})", f"Siniestros ({years_lbl})", "Siniestr. %"]]
             for _, r in top_emp.iterrows():
                 table_emp.append(
@@ -866,10 +871,10 @@ def generate_pdf_consolidado_por_pais(
                         f"{float(r['Siniestralidad']):.1f}%",
                     ]
                 )
-            pdf.add_table(table_emp, col_widths=[85, 35, 35, 25])
+            pdf.add_table(table_emp, col_widths=[85, 35, 35, 25], row_h=7, after_space=3)
 
         if not ramo_stats.empty:
-            pdf.section_title(f"Ramos Principales (Top {min(top_ramos, len(ramo_stats))}) | {years_lbl}")
+            pdf.section_title(f"Ramos Principales (Top {min(top_ramos, len(ramo_stats))}) | {years_lbl}", tight=True)
             table_ramo = [["Ramo", f"Primas ({years_lbl})", f"Siniestros ({years_lbl})", "Siniestr. %"]]
             for _, r in ramo_stats.iterrows():
                 table_ramo.append(
@@ -880,9 +885,11 @@ def generate_pdf_consolidado_por_pais(
                         f"{float(r['Siniestralidad']):.1f}%",
                     ]
                 )
-            pdf.add_table(table_ramo, col_widths=[85, 35, 35, 25])
+            pdf.add_table(table_ramo, col_widths=[85, 35, 35, 25], row_h=7, after_space=2)
 
-        # ===== GRÁFICAS (PNG) con periodo explícito en título =====
+        # =========================
+        # PÁGINA 2 (país): Gráficas (sin saltos raros / sin páginas en blanco)
+        # =========================
         tmp_files = []
         try:
             foco_year = build_foco_year_stats(df_pais, years_focus=years_focus)
@@ -908,12 +915,16 @@ def generate_pdf_consolidado_por_pais(
                 title=f"{pais} | Evolución {years_focus[0]}–{years_focus[-1]} (Carga / Cascos / RC)",
             )
 
-            pdf.section_title(f"Visualizaciones Clave del País | {years_lbl}")
-            pdf.add_image_section("Primas vs Siniestros por Ramo", f1.name, w=180)
-            pdf.add_image_section("Siniestralidad (%) por Ramo", f2.name, w=180)
+            pdf.add_page()
+            pdf.section_title(f"Visualizaciones Clave | {pais} | {years_lbl}", tight=True)
+            pdf.add_image_section("Primas vs Siniestros por Ramo", f1.name, w=175, tight=True)
+            pdf.add_image_section("Siniestralidad (%) por Ramo", f2.name, w=175, tight=True)
 
+            # Comparativo + evolución: deja la tabla y la gráfica juntas, pero sin forzar cortes
             if not foco_year.empty:
-                pdf.section_title(f"Comparativo {years_focus[0]}–{years_focus[-1]} | Ramos Foco (Carga/Cascos/RC)")
+                pdf.add_page()
+                pdf.section_title(f"Comparativo {years_focus[0]}–{years_focus[-1]} | Ramos Foco", tight=True)
+
                 table_foco = [["Ramo Foco", "Año", "Primas", "Siniestros", "Siniestr. %"]]
                 for _, r in foco_year.iterrows():
                     table_foco.append(
@@ -925,9 +936,11 @@ def generate_pdf_consolidado_por_pais(
                             f"{float(r['Siniestralidad']):.1f}%",
                         ]
                     )
-                pdf.add_table(table_foco, col_widths=[35, 20, 45, 45, 35])
+                pdf.add_table(table_foco, col_widths=[35, 20, 45, 45, 35], row_h=7, after_space=2)
 
-            pdf.add_image_section("Evolución anual | Primas vs Siniestros + Siniestralidad", f3.name, w=180)
+                pdf.add_image_section("Evolución anual | Primas vs Siniestros + Siniestralidad", f3.name, w=175, tight=True)
+            else:
+                pdf.add_image_section("Evolución anual | Primas vs Siniestros + Siniestralidad", f3.name, w=175, tight=True)
 
         finally:
             for p in tmp_files:
