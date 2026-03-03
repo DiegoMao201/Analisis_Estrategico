@@ -18,6 +18,14 @@ from matplotlib.ticker import FuncFormatter
 
 MODEL = "gpt-4o-mini"
 
+def _years_label(years: List[int]) -> str:
+    years = sorted([int(y) for y in (years or [])])
+    if not years:
+        return "Periodo no especificado"
+    if len(years) == 1:
+        return str(years[0])
+    return f"{years[0]}–{years[-1]} (acumulado)"
+
 
 # =========================
 # NUMÉRICOS + TOTALES (ROBUSTO)
@@ -96,11 +104,13 @@ def _kw_sum_row(row: pd.Series, cols: List[str], keyword: str) -> float:
 
 def _compute_totals_from_long(df_long: pd.DataFrame) -> Dict[str, float]:
     """
-    Calcula totales desde DF en formato LONG (Tipo, USD) o WIDE (Primas/Siniestros/No Reporta).
-    Retorna: Primas, Siniestros, No Reporta, Siniestralidad
+    Calcula totales desde DF en formato LONG (Tipo, USD) o WIDE (Primas/Siniestros).
+    Retorna: Primas, Siniestros, Siniestralidad
+
+    Nota: Se elimina cualquier mención/cálculo de "No Reporta" para que NO aparezca en el informe.
     """
     if df_long is None or df_long.empty:
-        return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
+        return {"Primas": 0.0, "Siniestros": 0.0, "Siniestralidad": 0.0}
 
     d = df_long.copy()
 
@@ -108,9 +118,8 @@ def _compute_totals_from_long(df_long: pd.DataFrame) -> Dict[str, float]:
     if "Primas" in d.columns and "Siniestros" in d.columns:
         primas = float(_to_num(d["Primas"]).sum())
         sin = float(_to_num(d["Siniestros"]).sum())
-        nr = float(_to_num(d["No Reporta"]).sum()) if "No Reporta" in d.columns else 0.0
         ratio = (sin / primas * 100.0) if primas > 0 else 0.0
-        return {"Primas": primas, "Siniestros": sin, "No Reporta": nr, "Siniestralidad": ratio}
+        return {"Primas": primas, "Siniestros": sin, "Siniestralidad": ratio}
 
     # LONG
     if "USD" in d.columns:
@@ -119,16 +128,13 @@ def _compute_totals_from_long(df_long: pd.DataFrame) -> Dict[str, float]:
         d["USD"] = 0.0
 
     if "Tipo" not in d.columns:
-        return {"Primas": 0.0, "Siniestros": 0.0, "No Reporta": 0.0, "Siniestralidad": 0.0}
+        return {"Primas": 0.0, "Siniestros": 0.0, "Siniestralidad": 0.0}
 
     t = d["Tipo"].astype(str).str.lower()
-
     primas = float(d[t.str.contains("prima", na=False)]["USD"].sum())
     sin = float(d[t.str.contains("siniestro", na=False)]["USD"].sum())
-    nr = float(d[t.str.contains(r"no reporta|no_reporta|noreporta", na=False, regex=True)]["USD"].sum())
-
     ratio = (sin / primas * 100.0) if primas > 0 else 0.0
-    return {"Primas": primas, "Siniestros": sin, "No Reporta": nr, "Siniestralidad": ratio}
+    return {"Primas": primas, "Siniestros": sin, "Siniestralidad": ratio}
 
 
 # -----------------------
@@ -344,17 +350,16 @@ def _save_png_evolucion_foco(foco_year_stats: pd.DataFrame, filename: str, title
 
 def build_ramo_stats(df_pais: pd.DataFrame) -> pd.DataFrame:
     if df_pais.empty:
-        return pd.DataFrame(columns=["Ramo", "Primas", "Siniestros", "No Reporta", "Siniestralidad"])
+        return pd.DataFrame(columns=["Ramo", "Primas", "Siniestros", "Siniestralidad"])
 
     g = df_pais.groupby(["Ramo", "Tipo"])["USD"].sum().unstack(fill_value=0).reset_index()
     cols = g.columns.tolist()
 
     g["Primas"] = g.apply(lambda r: _kw_sum_row(r, cols, "Prima"), axis=1)
     g["Siniestros"] = g.apply(lambda r: _kw_sum_row(r, cols, "Siniestro"), axis=1)
-    g["No Reporta"] = g.apply(lambda r: _kw_sum_row(r, cols, "No Reporta"), axis=1)
     g["Siniestralidad"] = (g["Siniestros"] / g["Primas"] * 100).fillna(0)
 
-    g = g[["Ramo", "Primas", "Siniestros", "No Reporta", "Siniestralidad"]]
+    g = g[["Ramo", "Primas", "Siniestros", "Siniestralidad"]]
     g = g.sort_values("Primas", ascending=False)
     return g
 
@@ -603,9 +608,10 @@ def _call_ia_country(
             "recomendaciones": [],
         }
 
+    # Contextos (sin "No Reporta")
     ramo_ctx = _df_to_context_table(
         ramo_stats,
-        cols=["Ramo", "Primas", "Siniestros", "Siniestralidad", "No Reporta"],
+        cols=["Ramo", "Primas", "Siniestros", "Siniestralidad"],
         max_rows=12,
     )
     emp_ctx = _df_to_context_table(
@@ -614,20 +620,25 @@ def _call_ia_country(
         max_rows=10,
     )
 
+    years_lbl = _years_label(years)
+
     prompt = f"""
 Actúa como Analista Senior de Seguros (LatAm) y consultor ejecutivo de ALSUM.
-Necesito un informe CONSOLIDADO por país (no por empresa individual; solo top empresas para referencia).
+Necesito un informe CONSOLIDADO por país.
+
+IMPORTANTE:
+- Todas las cifras son del periodo: {years_lbl}.
+- No menciones ni incluyas el texto "No Reporta" en ninguna parte.
 
 PAÍS: {pais}
-AÑOS INCLUIDOS: {", ".join(map(str, years)) if years else "No especificado"}
+PERIODO ANALIZADO: {years_lbl}
 
-TOTALES PAÍS:
+TOTALES PAÍS (ACUMULADO DEL PERIODO):
 - Primas: {totals["Primas"]:,.0f}
 - Siniestros: {totals["Siniestros"]:,.0f}
-- No Reporta: {totals["No Reporta"]:,.0f}
 - Siniestralidad: {totals["Siniestralidad"]:.1f}%
 
-RESUMEN POR RAMO (TOP):
+RESUMEN POR RAMO (TOP, ACUMULADO):
 {ramo_ctx}
 
 TOP EMPRESAS (referencia, NO extenderse):
@@ -749,8 +760,8 @@ def generate_pdf_consolidado_por_pais(
     df_filtrado: pd.DataFrame,
     api_key: str,
     instruccion: str,
-    report_title: str = "INFORME CONSOLIDADO POR PAÍS 2026",
-    subtitle: str = "ALSUM INTELLIGENCE",
+    report_title: str = "INFORME CONSOLIDADO POR PAÍS 2024",
+    subtitle: str = "ALSUM | Análisis 2024",
     top_ramos: int = 12,
     top_empresas: int = 10,
 ) -> bytes:
@@ -763,18 +774,23 @@ def generate_pdf_consolidado_por_pais(
     dfx["USD"] = _to_num(dfx["USD"])
 
     years = sorted(pd.to_numeric(dfx["Año"], errors="coerce").dropna().astype(int).unique().tolist())
+    years_lbl = _years_label(years)
+
     paises = sorted(dfx["País"].astype(str).unique().tolist())
 
+    # Portada: fuerza claridad de periodo (y elimina 2026)
+    final_title = f"INFORME CONSOLIDADO POR PAÍS {years_lbl}"
+    final_subtitle = f"ALSUM | Análisis {years_lbl}"
+
     pdf = utils.UltimatePDF()
-    pdf.cover_page(report_title, subtitle)
+    pdf.cover_page(final_title, final_subtitle)
 
     totals_global = _compute_totals_from_long(dfx)
     contexto_global = (
-        f"Años: {years}. Países incluidos: {len(paises)}.\n"
-        f"Primas: {totals_global['Primas']:,.0f} | "
-        f"Siniestros: {totals_global['Siniestros']:,.0f} | "
-        f"No Reporta: {totals_global['No Reporta']:,.0f} | "
-        f"Siniestralidad: {totals_global['Siniestralidad']:.1f}%.\n"
+        f"Periodo: {years_lbl}. Países incluidos: {len(paises)}.\n"
+        f"Primas (acumulado): {totals_global['Primas']:,.0f} | "
+        f"Siniestros (acumulado): {totals_global['Siniestros']:,.0f} | "
+        f"Siniestralidad (sobre acumulado): {totals_global['Siniestralidad']:.1f}%.\n"
         f"Instrucción: {instruccion}"
     )
 
@@ -783,7 +799,9 @@ def generate_pdf_consolidado_por_pais(
         prompt_global = (
             "Escribe un resumen ejecutivo global (máximo 8 líneas) del portafolio total, "
             "enfocado en: (1) concentración por países, (2) riesgo por siniestralidad, "
-            "(3) opacidad por No Reporta (si aplica), (4) 2 prioridades estratégicas."
+            "(3) 2 prioridades estratégicas. "
+            "No menciones ni incluyas el texto 'No Reporta'. "
+            f"Todas las cifras corresponden al periodo {years_lbl}."
         )
         try:
             resp = client.chat.completions.create(
@@ -802,10 +820,10 @@ def generate_pdf_consolidado_por_pais(
 
     pdf.executive_summary(resumen_global)
 
-    # Años foco (los que tú pediste)
+    # Años foco
     years_focus = [y for y in [2022, 2023, 2024] if y in years]
     if not years_focus:
-        years_focus = years  # fallback: usa los disponibles
+        years_focus = years
 
     for pais in paises:
         df_pais = dfx[dfx["País"].astype(str) == str(pais)].copy()
@@ -818,27 +836,27 @@ def generate_pdf_consolidado_por_pais(
         ia = _call_ia_country(api_key, pais, years, totals, ramo_stats, top_emp, instruccion)
 
         pdf.add_page()
-        pdf.section_title(f"País: {pais}")
+        pdf.section_title(f"País: {pais} | Periodo: {years_lbl}")
 
+        # KPI table: cada cifra explícita con periodo
         pdf.add_table(
             data=[
                 ["KPI", "Valor"],
-                ["Primas (USD)", f"{totals['Primas']:,.0f}"],
-                ["Siniestros (USD)", f"{totals['Siniestros']:,.0f}"],
-                ["Siniestralidad (%)", f"{totals['Siniestralidad']:.1f}%"],
-                ["No Reporta (USD)", f"{totals['No Reporta']:,.0f}"],
+                [f"Primas (USD) | {years_lbl}", f"{totals['Primas']:,.0f}"],
+                [f"Siniestros (USD) | {years_lbl}", f"{totals['Siniestros']:,.0f}"],
+                [f"Siniestralidad (%) | {years_lbl}", f"{totals['Siniestralidad']:.1f}%"],
             ],
-            col_widths=[60, 120],
+            col_widths=[80, 100],
         )
 
-        pdf.add_section("Resumen Ejecutivo del País", ia.get("resumen", ""))
+        pdf.add_section("Resumen Ejecutivo del País (con periodo explícito)", ia.get("resumen", ""))
 
         if ia.get("hallazgos"):
             pdf.key_findings(ia["hallazgos"])
 
         if not top_emp.empty:
-            pdf.section_title(f"Top {min(top_empresas, len(top_emp))} Empresas (Referencia)")
-            table_emp = [["Compañía", "Primas", "Siniestros", "Siniestr. %"]]
+            pdf.section_title(f"Top {min(top_empresas, len(top_emp))} Empresas (Referencia) | {years_lbl}")
+            table_emp = [["Compañía", f"Primas ({years_lbl})", f"Siniestros ({years_lbl})", "Siniestr. %"]]
             for _, r in top_emp.iterrows():
                 table_emp.append(
                     [
@@ -848,11 +866,11 @@ def generate_pdf_consolidado_por_pais(
                         f"{float(r['Siniestralidad']):.1f}%",
                     ]
                 )
-            pdf.add_table(table_emp, col_widths=[90, 30, 30, 30])
+            pdf.add_table(table_emp, col_widths=[85, 35, 35, 25])
 
         if not ramo_stats.empty:
-            pdf.section_title(f"Ramos Principales (Top {min(top_ramos, len(ramo_stats))})")
-            table_ramo = [["Ramo", "Primas", "Siniestros", "Siniestr. %"]]
+            pdf.section_title(f"Ramos Principales (Top {min(top_ramos, len(ramo_stats))}) | {years_lbl}")
+            table_ramo = [["Ramo", f"Primas ({years_lbl})", f"Siniestros ({years_lbl})", "Siniestr. %"]]
             for _, r in ramo_stats.iterrows():
                 table_ramo.append(
                     [
@@ -864,7 +882,7 @@ def generate_pdf_consolidado_por_pais(
                 )
             pdf.add_table(table_ramo, col_widths=[85, 35, 35, 25])
 
-        # ===== GRÁFICAS (PNG robusto SIN Kaleido) =====
+        # ===== GRÁFICAS (PNG) con periodo explícito en título =====
         tmp_files = []
         try:
             foco_year = build_foco_year_stats(df_pais, years_focus=years_focus)
@@ -872,18 +890,17 @@ def generate_pdf_consolidado_por_pais(
             f1 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f1.close()
             f2 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f2.close()
             f3 = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f3.close()
-
             tmp_files.extend([f1.name, f2.name, f3.name])
 
             _save_png_primas_vs_siniestros_ramo(
                 ramo_stats,
                 f1.name,
-                title=f"{pais} | Primas vs Siniestros por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+                title=f"{pais} | Primas vs Siniestros por Ramo | {years_lbl}",
             )
             _save_png_siniestralidad_ramo(
                 ramo_stats,
                 f2.name,
-                title=f"{pais} | Siniestralidad (%) por Ramo (Top {min(top_ramos, len(ramo_stats))})",
+                title=f"{pais} | Siniestralidad (%) por Ramo | {years_lbl}",
             )
             _save_png_evolucion_foco(
                 foco_year,
@@ -891,11 +908,10 @@ def generate_pdf_consolidado_por_pais(
                 title=f"{pais} | Evolución {years_focus[0]}–{years_focus[-1]} (Carga / Cascos / RC)",
             )
 
-            pdf.section_title("Visualizaciones Clave del País (Etiquetadas)")
+            pdf.section_title(f"Visualizaciones Clave del País | {years_lbl}")
             pdf.add_image_section("Primas vs Siniestros por Ramo", f1.name, w=180)
             pdf.add_image_section("Siniestralidad (%) por Ramo", f2.name, w=180)
 
-            # Tabla + evolución foco
             if not foco_year.empty:
                 pdf.section_title(f"Comparativo {years_focus[0]}–{years_focus[-1]} | Ramos Foco (Carga/Cascos/RC)")
                 table_foco = [["Ramo Foco", "Año", "Primas", "Siniestros", "Siniestr. %"]]
@@ -923,8 +939,9 @@ def generate_pdf_consolidado_por_pais(
         if ia.get("recomendaciones"):
             pdf.recommendations(ia["recomendaciones"])
 
+    # Anexos: sin "No Reporta" + periodo claro
     pdf.annex(
-        "Metodología: consolidación por país a partir de Primas/Siniestros (USD) filtrados por Años, Ramos, Afiliación y Compañías. "
+        f"Metodología: consolidación por país a partir de Primas/Siniestros (USD) filtrados por el periodo {years_lbl}. "
         "Las conclusiones de IA se generan sobre agregados (no micro-datos) y deben validarse contra contexto regulatorio/local."
     )
 

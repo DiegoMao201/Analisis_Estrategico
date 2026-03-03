@@ -78,7 +78,9 @@ class UltimatePDF(FPDF):
         if self.page_no() > 1:
             self.set_font(self.font_family_base, "B", 9)
             self.set_text_color(100, 100, 100)
-            self.cell(0, 10, "ALSUM - INTELIGENCIA DE NEGOCIOS 2026", 0, 0, "L")
+            # Antes: "ALSUM - INTELIGENCIA DE NEGOCIOS 2026"
+            # Evita año hardcodeado (el periodo real lo imprime el reporte por país)
+            self.cell(0, 10, "ALSUM - INTELIGENCIA DE NEGOCIOS", 0, 0, "L")
             self.cell(0, 10, f'{datetime.date.today().strftime("%d/%m/%Y")}', 0, 1, "R")
             self.set_draw_color(0, 74, 143)
             self.set_line_width(0.5)

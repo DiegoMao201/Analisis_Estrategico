@@ -609,8 +609,10 @@ with tab3:
                     df_filtrado=df_filtrado,
                     api_key=api_key,
                     instruccion=instruccion,
-                    report_title="INFORME CONSOLIDADO POR PAÍS 2026",
-                    subtitle="ALSUM INTELLIGENCE",
+                    # Aunque reporting ya lo hace dinámico con el periodo filtrado,
+                    # dejamos 2024 para eliminar cualquier rastro de 2026.
+                    report_title="INFORME CONSOLIDADO POR PAÍS 2024",
+                    subtitle="ALSUM | Análisis 2024",
                     top_ramos=top_ramos,
                     top_empresas=top_empresas,
                 )
