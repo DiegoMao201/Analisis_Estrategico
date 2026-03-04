@@ -507,3 +507,172 @@ def analisis_ia_3_puntos(api_key, prompt, contexto):
         return response.choices[0].message.content
     except Exception as e:
         return f"Error IA: {str(e)}"
+
+# ✅ NUEVO: Export Excel ejecutivo (XLSX) con formato profesional
+def export_excel_executive(
+    df: pd.DataFrame,
+    *,
+    sheet_name: str = "Data",
+    title: str = "ALSUM | Export",
+    subtitle: str = "",
+    period_label: str = "",
+) -> bytes:
+    """
+    Exporta un Excel (.xlsx) con formato ejecutivo:
+    - Header (título/subtítulo/periodo/fecha)
+    - Tabla con estilo, autofiltro, freeze panes
+    - Formatos: moneda/porcentaje/enteros
+    - Ajuste de anchos + configuración de impresión
+    """
+    import io
+
+    if df is None:
+        df = pd.DataFrame()
+
+    dfx = df.copy()
+
+    # Evitar problemas con zonas horarias / tipos raros
+    for c in dfx.columns:
+        if pd.api.types.is_datetime64tz_dtype(dfx[c]):
+            dfx[c] = dfx[c].dt.tz_convert(None)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        wb = writer.book
+
+        # Paleta ALSUM
+        color_primary = "#004A8F"
+        color_text = "#0f172a"
+        color_muted = "#64748b"
+        color_header_bg = "#EEF2F7"
+        color_border = "#CBD5E1"
+
+        # Formats
+        fmt_title = wb.add_format(
+            {"bold": True, "font_size": 18, "font_color": "white", "bg_color": color_primary, "align": "left", "valign": "vcenter"}
+        )
+        fmt_subtitle = wb.add_format({"bold": True, "font_size": 11, "font_color": color_text, "align": "left", "valign": "vcenter"})
+        fmt_meta = wb.add_format({"font_size": 9, "font_color": color_muted, "align": "left", "valign": "vcenter"})
+
+        fmt_hdr = wb.add_format(
+            {"bold": True, "font_size": 10, "font_color": color_text, "bg_color": color_header_bg, "border": 1, "border_color": color_border, "align": "center", "valign": "vcenter"}
+        )
+        fmt_txt = wb.add_format({"font_size": 10, "font_color": color_text, "border": 1, "border_color": color_border})
+        fmt_int = wb.add_format({"font_size": 10, "font_color": color_text, "num_format": "#,##0", "border": 1, "border_color": color_border})
+        fmt_usd = wb.add_format({"font_size": 10, "font_color": color_text, "num_format": "$#,##0", "border": 1, "border_color": color_border})
+        fmt_pct = wb.add_format({"font_size": 10, "font_color": color_text, "num_format": "0.0%", "border": 1, "border_color": color_border})
+
+        # Sheet
+        sheet = sheet_name[:31] if sheet_name else "Data"
+        ws = wb.add_worksheet(sheet)
+        writer.sheets[sheet] = ws
+
+        # Layout de cabecera (3 filas)
+        ws.set_row(0, 28)
+        ws.merge_range(0, 0, 0, max(0, len(dfx.columns) - 1), title, fmt_title)
+
+        meta_left = []
+        if subtitle:
+            meta_left.append(subtitle)
+        if period_label:
+            meta_left.append(f"Periodo: {period_label}")
+        meta_left.append(f"Generado: {datetime.date.today().strftime('%d/%m/%Y')}")
+        ws.write(1, 0, " | ".join([m for m in meta_left if m]), fmt_meta)
+
+        # Si dataframe vacío
+        if dfx.empty:
+            ws.write(3, 0, "Sin datos para exportar con los filtros actuales.", fmt_subtitle)
+            ws.set_column(0, 0, 70)
+            # Config impresión
+            ws.set_landscape()
+            ws.fit_to_pages(1, 1)
+            ws.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
+            return output.getvalue()
+
+        # Escribir DF a partir de fila 3 (0-index)
+        start_row = 3
+        start_col = 0
+
+        # Convertir nombres a string
+        cols = [str(c) for c in dfx.columns.tolist()]
+        dfx.columns = cols
+
+        # Write headers
+        for j, c in enumerate(cols):
+            ws.write(start_row, start_col + j, c, fmt_hdr)
+
+        # Heurísticas de formato por columna
+        def _col_kind(name: str) -> str:
+            n = str(name).strip().lower()
+            if n in {"año", "ano", "year"}:
+                return "int"
+            if "siniestralidad" in n or n.endswith("%") or "pct" in n or "porcentaje" in n:
+                return "pct"
+            if any(k in n for k in ["usd", "prima", "primas", "siniestro", "siniestros", "resultado", "monto", "valor", "total"]):
+                return "usd"
+            return "txt"
+
+        col_kinds = [_col_kind(c) for c in cols]
+
+        # Write data rows
+        for i in range(len(dfx)):
+            for j, c in enumerate(cols):
+                val = dfx.iat[i, j]
+                kind = col_kinds[j]
+
+                # Normalización de NaN
+                if pd.isna(val):
+                    val = ""
+
+                # Escribir según tipo
+                if kind == "int":
+                    try:
+                        ws.write_number(start_row + 1 + i, start_col + j, int(val), fmt_int)
+                    except Exception:
+                        ws.write(start_row + 1 + i, start_col + j, str(val), fmt_txt)
+                elif kind == "usd":
+                    try:
+                        ws.write_number(start_row + 1 + i, start_col + j, float(val), fmt_usd)
+                    except Exception:
+                        ws.write(start_row + 1 + i, start_col + j, str(val), fmt_txt)
+                elif kind == "pct":
+                    # Si viene como 50.2 (porcentaje), lo convertimos a 0.502 para formato %
+                    try:
+                        v = float(val)
+                        v = (v / 100.0) if v > 1.5 else v
+                        ws.write_number(start_row + 1 + i, start_col + j, v, fmt_pct)
+                    except Exception:
+                        ws.write(start_row + 1 + i, start_col + j, str(val), fmt_txt)
+                else:
+                    ws.write(start_row + 1 + i, start_col + j, str(val), fmt_txt)
+
+        last_row = start_row + len(dfx)
+        last_col = start_col + len(cols) - 1
+
+        # Freeze panes debajo del header
+        ws.freeze_panes(start_row + 1, 0)
+
+        # Autofilter
+        ws.autofilter(start_row, start_col, last_row, last_col)
+
+        # Ajuste de anchos (capado)
+        for j, c in enumerate(cols):
+            sample = dfx[c].astype(str).head(200).tolist()
+            max_len = max([len(str(c))] + [len(s) for s in sample]) if sample else len(str(c))
+            width = min(max(10, max_len + 2), 45)
+            ws.set_column(j, j, width)
+
+        # Condicional ejecutivo para siniestralidad (si existe)
+        for j, c in enumerate(cols):
+            if "siniestralidad" in c.lower():
+                # escala 0% a 100% (verde->amarillo->rojo)
+                ws.conditional_format(start_row + 1, j, last_row, j, {"type": "3_color_scale"})
+                break
+
+        # Config de impresión
+        ws.set_landscape()
+        ws.fit_to_pages(1, 1)
+        ws.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
+        ws.repeat_rows(start_row, start_row)  # repetir header en impresión
+
+    return output.getvalue()

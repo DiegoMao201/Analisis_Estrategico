@@ -638,9 +638,23 @@ with tab4:
     st.subheader("🔬 Laboratorio de Datos")
     with st.expander("Ver Dataframe Completo", expanded=True):
         st.dataframe(df_filtrado, use_container_width=True)
-    
-    csv = df_filtrado.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Descargar CSV Filtrado", data=csv, file_name="data_filtrada.csv", mime="text/csv")
+
+    # ✅ Antes: CSV. Ahora: Excel ejecutivo (.xlsx)
+    years_lbl = reporting._years_label(sel_anios) if "sel_anios" in globals() else ""
+    excel_bytes = utils.export_excel_executive(
+        df_filtrado,
+        sheet_name="Data Filtrada",
+        title="ALSUM | Data Filtrada (Export Ejecutivo)",
+        subtitle="Consolidado con filtros aplicados",
+        period_label=years_lbl,
+    )
+
+    st.download_button(
+        "📥 Descargar Excel Ejecutivo (.xlsx)",
+        data=excel_bytes,
+        file_name="ALSUM_Data_Filtrada_Exec.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 # ==========================================
 # 7. VISUALIZACIÓN PRINCIPAL (HOME)
