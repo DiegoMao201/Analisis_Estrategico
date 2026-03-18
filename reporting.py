@@ -2,6 +2,7 @@ import os
 import tempfile
 from typing import Dict, List
 import re  # <-- NUEVO
+import unicodedata
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,6 +18,58 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
 MODEL = "gpt-4o-mini"
+
+LATAM_COUNTRY_ALIASES = {
+    "argentina",
+    "bolivia",
+    "bolivia plurinational state of",
+    "brazil",
+    "brasil",
+    "chile",
+    "colombia",
+    "costa rica",
+    "cuba",
+    "dominican republic",
+    "ecuador",
+    "el salvador",
+    "guatemala",
+    "haiti",
+    "honduras",
+    "mexico",
+    "nicaragua",
+    "panama",
+    "paraguay",
+    "peru",
+    "puerto rico",
+    "republica dominicana",
+    "rep dominicana",
+    "dominicana",
+    "dominican rep",
+    "trinidad and tobago",
+    "trinidad y tobago",
+    "uruguay",
+    "venezuela",
+    "venezuela bolivarian republic of",
+    "venezuela, bolivarian republic of",
+}
+
+
+def _normalize_country_name(value: object) -> str:
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
+    text = re.sub(r"[^a-z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def filter_latam_countries(df: pd.DataFrame, country_col: str = "País") -> pd.DataFrame:
+    if df is None or df.empty or country_col not in df.columns:
+        return df
+
+    country_series = df[country_col].astype(str)
+    normalized = country_series.map(_normalize_country_name)
+    mask = normalized.isin(LATAM_COUNTRY_ALIASES)
+    return df.loc[mask].copy()
 
 def _years_label(years: List[int]) -> str:
     years = sorted([int(y) for y in (years or [])])
@@ -592,6 +645,50 @@ def _df_to_context_table(df: pd.DataFrame, cols: List[str], max_rows: int) -> st
     return view.to_string(index=False)
 
 
+def _build_country_fallback_narrative(
+    pais: str,
+    years_lbl: str,
+    totals: Dict[str, float],
+    ramo_stats: pd.DataFrame,
+    top_empresas: pd.DataFrame,
+) -> Dict[str, object]:
+    ramo_lider = "Sin información suficiente"
+    ratio_lider = 0.0
+    if not ramo_stats.empty:
+        ramo_top = ramo_stats.sort_values("Primas", ascending=False).iloc[0]
+        ramo_lider = str(ramo_top["Ramo"])
+        ratio_lider = float(ramo_top["Siniestralidad"])
+
+    empresa_lider = "Sin información suficiente"
+    if not top_empresas.empty:
+        empresa_lider = str(top_empresas.iloc[0]["Compañía"])
+
+    resumen = (
+        f"Durante {years_lbl}, {pais} registra primas por {totals['Primas']:,.0f} USD y siniestros por "
+        f"{totals['Siniestros']:,.0f} USD, con una siniestralidad consolidada de {totals['Siniestralidad']:.1f}%. "
+        f"El portafolio muestra mayor peso en {ramo_lider}, por lo que la lectura estratégica debe priorizar "
+        "la calidad técnica del crecimiento y la disciplina de suscripción."
+    )
+
+    hallazgos = [
+        f"Oportunidad: {ramo_lider} concentra el mayor volumen y puede capturar crecimiento rentable si se protege el margen técnico.",
+        f"Riesgo: la siniestralidad consolidada de {totals['Siniestralidad']:.1f}% exige seguimiento táctico de desvíos y concentración por negocio.",
+        f"Tendencia: {empresa_lider} aparece como referencia competitiva y ayuda a leer la presión comercial del mercado local.",
+    ]
+
+    recomendaciones = [
+        "Priorizar revisiones de tarifa, deducibles y capacidad en los ramos de mayor exposición antes de acelerar crecimiento.",
+        "Monitorear mensualmente los segmentos con mayor volatilidad para anticipar deterioros de siniestralidad y corregir desviaciones.",
+        "Contrastar el desempeño técnico con benchmarks de mercado para defender participación sin sacrificar rentabilidad.",
+    ]
+
+    return {
+        "resumen": resumen,
+        "hallazgos": hallazgos,
+        "recomendaciones": recomendaciones,
+    }
+
+
 def _call_ia_country(
     api_key: str,
     pais: str,
@@ -601,12 +698,10 @@ def _call_ia_country(
     top_empresas: pd.DataFrame,
     instruccion: str,
 ) -> Dict[str, object]:
+    years_lbl = _years_label(years)
+
     if not api_key:
-        return {
-            "resumen": "⚠️ API Key no configurada. Se omite análisis IA por país.",
-            "hallazgos": [],
-            "recomendaciones": [],
-        }
+        return _build_country_fallback_narrative(pais, years_lbl, totals, ramo_stats, top_empresas)
 
     # Contextos (sin "No Reporta")
     ramo_ctx = _df_to_context_table(
@@ -620,8 +715,6 @@ def _call_ia_country(
         max_rows=10,
     )
 
-    years_lbl = _years_label(years)
-
     prompt = f"""
 Actúa como Analista Senior de Seguros (LatAm) y consultor ejecutivo de ALSUM.
 Necesito un informe CONSOLIDADO por país.
@@ -629,6 +722,9 @@ Necesito un informe CONSOLIDADO por país.
 IMPORTANTE:
 - Todas las cifras son del periodo: {years_lbl}.
 - No menciones ni incluyas el texto "No Reporta" en ninguna parte.
+- Redacta en tono de comité directivo: preciso, sobrio, con foco en implicaciones de negocio.
+- No repitas cifras innecesariamente; interpreta primero, cuantifica después.
+- Si identificas concentración, deterioro técnico o oportunidad comercial, exprésalo con claridad ejecutiva.
 
 PAÍS: {pais}
 PERIODO ANALIZADO: {years_lbl}
@@ -649,13 +745,13 @@ INSTRUCCIÓN DEL USUARIO:
 
 FORMATO DE RESPUESTA OBLIGATORIO (no agregues otras secciones):
 RESUMEN:
-- (máximo 5 líneas ejecutivas)
+- (máximo 5 líneas ejecutivas, conectando volumen, riesgo y lectura estratégica)
 
 HALLAZGOS:
-- (3 bullets: 1 oportunidad, 1 riesgo/anomalía, 1 tendencia)
+- (3 bullets: 1 oportunidad, 1 riesgo/anomalía, 1 tendencia competitiva o técnica)
 
 RECOMENDACIONES:
-- (3 bullets accionables, priorizadas por impacto)
+- (3 bullets accionables, priorizadas por impacto y factibilidad)
 """.strip()
 
     client = OpenAI(api_key=api_key)
@@ -669,8 +765,8 @@ RECOMENDACIONES:
             temperature=0.6,
         )
         text = resp.choices[0].message.content or ""
-    except Exception as e:
-        return {"resumen": f"Error IA: {e}", "hallazgos": [], "recomendaciones": []}
+    except Exception:
+        return _build_country_fallback_narrative(pais, years_lbl, totals, ramo_stats, top_empresas)
 
     def _extract_block(label: str, next_labels: List[str]) -> str:
         t = text
@@ -770,7 +866,10 @@ def generate_pdf_consolidado_por_pais(
     if missing:
         raise ValueError(f"Faltan columnas requeridas para informe por país: {missing}")
 
-    dfx = df_filtrado.copy()
+    dfx = filter_latam_countries(df_filtrado.copy())
+    if dfx.empty:
+        raise ValueError("No hay datos de países LATAM para construir el informe.")
+
     dfx["USD"] = _to_num(dfx["USD"])
 
     years = sorted(pd.to_numeric(dfx["Año"], errors="coerce").dropna().astype(int).unique().tolist())
@@ -788,7 +887,7 @@ def generate_pdf_consolidado_por_pais(
 
     totals_global = _compute_totals_from_long(dfx)
     contexto_global = (
-        f"Periodo: {years_lbl}. Países incluidos: {len(paises)}.\n"
+        f"Periodo: {years_lbl}. Países incluidos de LATAM: {len(paises)}.\n"
         f"Primas (acumulado): {totals_global['Primas']:,.0f} | "
         f"Siniestros (acumulado): {totals_global['Siniestros']:,.0f} | "
         f"Siniestralidad (sobre acumulado): {totals_global['Siniestralidad']:.1f}%.\n"
@@ -799,9 +898,10 @@ def generate_pdf_consolidado_por_pais(
         client = OpenAI(api_key=api_key)
         prompt_global = (
             "Escribe un resumen ejecutivo global (máximo 8 líneas) del portafolio total, "
-            "enfocado en: (1) concentración por países, (2) riesgo por siniestralidad, "
+            "enfocado en: (1) concentración por países LATAM, (2) riesgo por siniestralidad, "
             "(3) 2 prioridades estratégicas. "
             "No menciones ni incluyas el texto 'No Reporta'. "
+            "Redacta en estilo ejecutivo, con lectura de negocio y sin frases genéricas. "
             f"Todas las cifras corresponden al periodo {years_lbl}."
         )
         try:
@@ -817,7 +917,13 @@ def generate_pdf_consolidado_por_pais(
         except Exception:
             resumen_global = contexto_global
     else:
-        resumen_global = contexto_global
+        resumen_global = (
+            f"El consolidado LATAM del periodo {years_lbl} integra {len(paises)} mercados con primas por "
+            f"{totals_global['Primas']:,.0f} USD y siniestros por {totals_global['Siniestros']:,.0f} USD, "
+            f"para una siniestralidad agregada de {totals_global['Siniestralidad']:.1f}%. "
+            "La lectura ejecutiva debe priorizar concentración geográfica, disciplina técnica y acciones "
+            "comerciales selectivas en los mercados con mejor equilibrio entre escala y rentabilidad."
+        )
 
     pdf.executive_summary(resumen_global)
 
@@ -854,7 +960,7 @@ def generate_pdf_consolidado_por_pais(
             after_space=3,
         )
 
-        pdf.add_section("Resumen Ejecutivo (Periodo explícito)", ia.get("resumen", ""))
+        pdf.add_section("Resumen Ejecutivo", ia.get("resumen", ""))
 
         if ia.get("hallazgos"):
             pdf.key_findings(ia["hallazgos"])

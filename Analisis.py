@@ -385,6 +385,9 @@ col4.metric("⚠️ Data No Reportada (Riesgo)", f"${total_noreporta:,.0f}", del
 
 st.divider()
 
+# Instrucción base reutilizable para análisis IA y PDF.
+instruccion = "Enfocarse en la alta siniestralidad y riesgos ocultos."
+
 # ==========================================
 # 8. PESTAÑAS DETALLADAS
 # ==========================================
@@ -540,8 +543,21 @@ with tab3:
     st.subheader("📝 Generación de Informe Ejecutivo (PDF)")
     col_pdf_1, col_pdf_2 = st.columns([3, 1])
 
+    df_reporte_latam = reporting.filter_latam_countries(df_filtrado)
+    paises_excluidos_reporte = []
+    if 'País' in df_filtrado.columns:
+        paises_actuales_reporte = sorted(df_filtrado['País'].astype(str).unique().tolist())
+        paises_latam_reporte = sorted(df_reporte_latam['País'].astype(str).unique().tolist()) if not df_reporte_latam.empty else []
+        paises_excluidos_reporte = [p for p in paises_actuales_reporte if p not in paises_latam_reporte]
+
     with col_pdf_1:
-        instruccion = st.text_area("Instrucciones específicas:", "Enfocarse en la alta siniestralidad y riesgos ocultos.")
+        instruccion = st.text_area("Instrucciones específicas:", instruccion)
+
+        st.caption(
+            f"Al generar el informe, se incluirán únicamente países LATAM. Mercados considerados en el PDF: {df_reporte_latam['País'].nunique() if not df_reporte_latam.empty else 0}."
+        )
+        if paises_excluidos_reporte:
+            st.caption(f"Se excluyen automáticamente del PDF por no pertenecer a LATAM: {', '.join(paises_excluidos_reporte)}")
 
         st.markdown("#### 📌 Configuración Informe Consolidado por País")
         c_cfg1, c_cfg2 = st.columns(2)
@@ -557,9 +573,72 @@ with tab3:
     # --- Tu botón actual (no se toca el formato) ---
     if btn_pdf:
         with st.status("🛠️ Construyendo informe...", expanded=True):
+            if df_reporte_latam.empty:
+                st.error("No hay datos LATAM disponibles con los filtros actuales para construir el informe.")
+                st.stop()
+
             st.write("Analizando datos globales...")
 
-            contexto_global = f"Primas: {total_primas}, Siniestros: {total_siniestros}, Siniestralidad: {siniestralidad_global}%, No Reportado: {total_noreporta}. {instruccion}"
+            df_primas_pdf = df_reporte_latam[df_reporte_latam['Tipo'].str.contains('Prima', case=False, na=False)].copy()
+            df_siniestros_pdf = df_reporte_latam[df_reporte_latam['Tipo'].str.contains('Siniestro', case=False, na=False)].copy()
+            df_noreporta_pdf = df_reporte_latam[df_reporte_latam['Tipo'].str.contains('No Reporta', case=False, na=False)].copy()
+
+            total_primas_pdf = df_primas_pdf[col_valor].sum()
+            total_siniestros_pdf = df_siniestros_pdf[col_valor].sum()
+            total_noreporta_pdf = df_noreporta_pdf[col_valor].sum()
+            siniestralidad_global_pdf = (total_siniestros_pdf / total_primas_pdf * 100) if total_primas_pdf > 0 else 0
+
+            ramo_stats_pdf = df_reporte_latam.groupby(['Ramo', 'Tipo'])[col_valor].sum().unstack(fill_value=0).reset_index()
+            cols_pivot_pdf = ramo_stats_pdf.columns.tolist()
+
+            def get_col_val_pdf(keyword, df_row):
+                matches = [c for c in cols_pivot_pdf if keyword.lower() in str(c).lower()]
+                return df_row[matches].sum() if matches else 0
+
+            ramo_stats_pdf['Primas'] = ramo_stats_pdf.apply(lambda x: get_col_val_pdf('Prima', x), axis=1)
+            ramo_stats_pdf['Siniestros'] = ramo_stats_pdf.apply(lambda x: get_col_val_pdf('Siniestro', x), axis=1)
+            ramo_stats_pdf['No Reporta'] = ramo_stats_pdf.apply(lambda x: get_col_val_pdf('No Reporta', x), axis=1)
+            ramo_stats_pdf['Siniestralidad'] = (ramo_stats_pdf['Siniestros'] / ramo_stats_pdf['Primas'] * 100).fillna(0)
+
+            def get_color_pdf(ratio):
+                if ratio < 50:
+                    return '#10B981'
+                elif ratio < 75:
+                    return '#F59E0B'
+                return '#EF4444'
+
+            ramo_stats_pdf['Color'] = ramo_stats_pdf['Siniestralidad'].apply(get_color_pdf)
+            ramo_stats_pdf = ramo_stats_pdf.sort_values('Primas', ascending=False)
+
+            fig_bar_pdf = go.Figure()
+            fig_bar_pdf.add_trace(go.Bar(
+                x=ramo_stats_pdf['Ramo'], y=ramo_stats_pdf['Primas'],
+                name='Primas', marker_color=ramo_stats_pdf['Color'],
+                text=ramo_stats_pdf['Siniestralidad'].apply(lambda x: f"{x:.1f}%"),
+                textposition='auto'
+            ))
+            fig_bar_pdf.add_trace(go.Bar(
+                x=ramo_stats_pdf['Ramo'], y=ramo_stats_pdf['No Reporta'],
+                name='No Reporta', marker_color='#94A3B8'
+            ))
+            fig_bar_pdf.update_layout(barmode='stack', xaxis_tickangle=-45, legend=dict(orientation="h", y=1.1))
+
+            data_pie_pdf = pd.DataFrame({
+                'Categoría': ['Primas', 'Siniestros', 'No Reporta'],
+                'Valor': [total_primas_pdf, total_siniestros_pdf, total_noreporta_pdf]
+            })
+            fig_pie_pdf = px.pie(
+                data_pie_pdf, values='Valor', names='Categoría',
+                color='Categoría',
+                color_discrete_map={'Primas': '#004A8F', 'Siniestros': '#DC2626', 'No Reporta': '#F59E0B'},
+                hole=0.5
+            )
+            fig_pie_pdf.update_traces(textinfo='percent+label', textfont_size=14)
+
+            contexto_global = (
+                f"Cobertura exclusiva LATAM. Primas: {total_primas_pdf}, Siniestros: {total_siniestros_pdf}, "
+                f"Siniestralidad: {siniestralidad_global_pdf}%, No Reportado: {total_noreporta_pdf}. {instruccion}"
+            )
             resumen = generar_seccion_ia(api_key, contexto_global, "resumen")
             hallazgos = generar_seccion_ia(api_key, contexto_global, "hallazgos").split('\n')
             analisis = generar_seccion_ia(api_key, contexto_global, "analisis")
@@ -569,14 +648,14 @@ with tab3:
             # Guardar gráficos (si existen)
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile1:
                 try:
-                    save_plotly_figure(fig_bar, tmpfile1.name)
+                    save_plotly_figure(fig_bar_pdf, tmpfile1.name)
                     bar_chart_path = tmpfile1.name
                 except Exception:
                     bar_chart_path = tmpfile1.name
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile2:
                 try:
-                    save_plotly_figure(fig_pie, tmpfile2.name)
+                    save_plotly_figure(fig_pie_pdf, tmpfile2.name)
                     pie_chart_path = tmpfile2.name
                 except Exception:
                     pie_chart_path = tmpfile2.name
@@ -588,7 +667,7 @@ with tab3:
                 years_lbl = reporting._years_label(sel_anios) if "sel_anios" in globals() else "2024"
                 pdf.period_label = years_lbl
 
-                pdf.cover_page(f"INFORME ESTRATÉGICO {years_lbl}", f"ALSUM | Análisis {years_lbl}")
+                pdf.cover_page(f"INFORME ESTRATÉGICO LATAM {years_lbl}", f"ALSUM | Análisis LATAM {years_lbl}")
                 pdf.executive_summary(resumen)
                 pdf.key_findings([h for h in hallazgos if h.strip()])
                 pdf.add_section("Análisis Detallado", analisis)
@@ -611,15 +690,19 @@ with tab3:
     if btn_pdf_pais:
         try:
             with st.status("🛠️ Construyendo consolidado por país...", expanded=True):
+                if df_reporte_latam.empty:
+                    st.error("No hay datos LATAM disponibles con los filtros actuales para construir el informe consolidado.")
+                    st.stop()
+
                 st.write("Preparando agregados por país...")
                 pdf_bytes = reporting.generate_pdf_consolidado_por_pais(
-                    df_filtrado=df_filtrado,
+                    df_filtrado=df_reporte_latam,
                     api_key=api_key,
                     instruccion=instruccion,
                     # Aunque reporting ya lo hace dinámico con el periodo filtrado,
                     # dejamos 2024 para eliminar cualquier rastro de 2026.
-                    report_title="INFORME CONSOLIDADO POR PAÍS 2024",
-                    subtitle="ALSUM | Análisis 2024",
+                    report_title="INFORME CONSOLIDADO LATAM POR PAÍS 2024",
+                    subtitle="ALSUM | Análisis LATAM 2024",
                     top_ramos=top_ramos,
                     top_empresas=top_empresas,
                 )
