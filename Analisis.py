@@ -7,10 +7,101 @@ import unicodedata
 from openai import OpenAI
 import os
 import tempfile
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 import reporting  # <-- NUEVO (archivo reporting.py)
 
 def save_plotly_figure(fig, filename):
     fig.write_image(filename, format="png", width=1000, height=600)
+
+
+def save_global_bar_pdf_figure(ramo_stats, filename):
+    fig, ax = plt.subplots(figsize=(15, 7.5), dpi=220)
+
+    if ramo_stats is None or ramo_stats.empty:
+        ax.set_title("Desempeño por Ramo", loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+        ax.text(0.5, 0.5, "Sin datos disponibles", ha="center", va="center")
+        ax.axis("off")
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    df_chart = ramo_stats.copy().head(15)
+    x = list(range(len(df_chart)))
+    labels = df_chart['Ramo'].astype(str).tolist()
+    colors = df_chart['Color'].tolist() if 'Color' in df_chart.columns else ['#004A8F'] * len(df_chart)
+
+    ax.grid(True, axis='y', color='#e2e8f0', linewidth=1)
+    ax.set_axisbelow(True)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    bars_primas = ax.bar(x, df_chart['Primas'].values, color=colors, label='Primas')
+    bars_noreporta = ax.bar(x, df_chart['No Reporta'].values, bottom=df_chart['Primas'].values, color='#94A3B8', label='No Reporta')
+
+    ax.set_title("Desempeño por Ramo", loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+    ax.set_ylabel("USD", fontsize=12, color="#0f172a")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=10)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+
+    max_height = 0.0
+    for bar, ratio in zip(bars_primas, df_chart['Siniestralidad'].values):
+        height = float(bar.get_height())
+        max_height = max(max_height, height)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height + max(1.0, height * 0.01),
+            f"{float(ratio):.1f}%",
+            ha='center',
+            va='bottom',
+            fontsize=9,
+            color='#0f172a',
+            clip_on=False,
+        )
+
+    total_heights = (df_chart['Primas'] + df_chart['No Reporta']).astype(float)
+    max_total = float(total_heights.max()) if len(total_heights) else 0.0
+    ax.set_ylim(0, max(1.0, max_total * 1.25))
+    ax.legend(loc='upper left', frameon=True, facecolor='white', edgecolor='#cbd5e1')
+    fig.tight_layout()
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
+
+
+def save_global_pie_pdf_figure(data_pie, filename):
+    fig, ax = plt.subplots(figsize=(10, 7), dpi=220)
+
+    if data_pie is None or data_pie.empty or float(data_pie['Valor'].sum()) <= 0:
+        ax.set_title("Distribución de Flujos", loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+        ax.text(0.5, 0.5, "Sin datos disponibles", ha="center", va="center")
+        ax.axis("off")
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    colors = ['#004A8F', '#DC2626', '#F59E0B']
+    wedges, texts, autotexts = ax.pie(
+        data_pie['Valor'].values,
+        labels=data_pie['Categoría'].tolist(),
+        colors=colors[:len(data_pie)],
+        autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else '',
+        startangle=90,
+        wedgeprops={"width": 0.45, "edgecolor": "white"},
+        textprops={"color": "#0f172a", "fontsize": 11},
+    )
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontsize(11)
+        autotext.set_fontweight('bold')
+
+    ax.set_title("Distribución de Flujos", loc="left", fontsize=18, fontweight="bold", color="#0f172a")
+    ax.axis('equal')
+    fig.tight_layout()
+    fig.savefig(filename, bbox_inches="tight")
+    plt.close(fig)
 
 # ==========================================
 # 0. CONFIGURACIÓN INICIAL (DEBE IR PRIMERO)
@@ -645,20 +736,15 @@ with tab3:
             recomendaciones = generar_seccion_ia(api_key, contexto_global, "recomendaciones").split('\n')
             anexos = generar_seccion_ia(api_key, contexto_global, "anexos")
 
-            # Guardar gráficos (si existen)
+            bar_chart_path = None
+            pie_chart_path = None
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile1:
-                try:
-                    save_plotly_figure(fig_bar_pdf, tmpfile1.name)
-                    bar_chart_path = tmpfile1.name
-                except Exception:
-                    bar_chart_path = tmpfile1.name
+                bar_chart_path = tmpfile1.name
+            save_global_bar_pdf_figure(ramo_stats_pdf, bar_chart_path)
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile2:
-                try:
-                    save_plotly_figure(fig_pie_pdf, tmpfile2.name)
-                    pie_chart_path = tmpfile2.name
-                except Exception:
-                    pie_chart_path = tmpfile2.name
+                pie_chart_path = tmpfile2.name
+            save_global_pie_pdf_figure(data_pie_pdf, pie_chart_path)
 
             try:
                 st.write("Maquetando documento...")
@@ -672,7 +758,8 @@ with tab3:
                 pdf.key_findings([h for h in hallazgos if h.strip()])
                 pdf.add_section("Análisis Detallado", analisis)
                 pdf.section_title("Visualizaciones Clave", tight=True)
-                pdf.add_image_section("Desempeño por Ramo", bar_chart_path, w=175, tight=True)
+                if bar_chart_path and os.path.exists(bar_chart_path):
+                    pdf.add_image_section("Desempeño por Ramo", bar_chart_path, w=175, tight=True)
 
                 # ✅ No incluir secciones/labels con “No Reporta” en el PDF global
                 # (si quieres mantener la torta, debe ser solo Primas/Siniestros)
@@ -685,6 +772,13 @@ with tab3:
                 st.download_button("📥 Descargar PDF", data=pdf_bytes, file_name="Reporte_ALSUM.pdf", mime="application/pdf")
             except Exception as e:
                 st.error(f"Error generando PDF: {e}")
+            finally:
+                for temp_path in [bar_chart_path, pie_chart_path]:
+                    if temp_path and os.path.exists(temp_path):
+                        try:
+                            os.unlink(temp_path)
+                        except Exception:
+                            pass
 
     # --- NUEVO: Consolidado por País ---
     if btn_pdf_pais:

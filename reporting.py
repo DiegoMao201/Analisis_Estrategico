@@ -43,7 +43,6 @@ LATAM_COUNTRY_ALIASES = {
     "puerto rico",
     "republica dominicana",
     "rep dominicana",
-    "regional",
     "dominicana",
     "dominican rep",
     "trinidad and tobago",
