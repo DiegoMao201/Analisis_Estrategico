@@ -3,6 +3,7 @@ pandas
 plotly
 openpyxl
 fpdf2
+reportlab
 openai
 fuzzywuzzy
 python-Levenshtein

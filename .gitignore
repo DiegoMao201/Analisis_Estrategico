@@ -1,3 +1,9 @@
+# Ignorar archivos de cuenta de cobro generados localmente
+generate_cuenta_cobro.py
+cuenta_cobro_*.pdf
+
+# Entorno virtual
+venv/
 # Secrets
 .streamlit/secrets.toml
 
