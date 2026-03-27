@@ -412,7 +412,7 @@ def build_message(
         parts.append(body)
     if closing:
         parts.append(closing)
-    parts.append(f"Cordialmente,\n{signature}\nALSUM Analytics | Strategic Command")
+    parts.append(f"Cordialmente,\n{signature}\nALSUM | Gestora Comercial")
     return "\n\n".join(part for part in parts if part.strip())
 
 
