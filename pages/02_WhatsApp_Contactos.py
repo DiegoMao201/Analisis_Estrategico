@@ -379,15 +379,15 @@ def build_message(
     openings = {
         "Invitacion ejecutiva": (
             f"Apreciado/a {row['Nombre']},\n\n"
-            "Reciba un cordial saludo. Desde ALSUM Analytics | Estrategia 360 queremos compartirle una comunicacion prioritaria dentro de nuestra agenda institucional y de relacionamiento ejecutivo."
+            "Reciba un cordial saludo. Desde ALSUM | queremos compartirle una comunicacion prioritaria dentro de nuestra agenda institucional y de relacionamiento ejecutivo."
         ),
         "Convocatoria comercial": (
             f"Apreciado/a {row['Nombre']},\n\n"
-            "Espero que se encuentre muy bien. Le escribimos desde ALSUM Analytics | Estrategia 360 para acercarle una convocatoria con enfoque profesional y alto valor para nuestra red de aliados y decisores."
+            "Espero que se encuentre muy bien. Le escribimos desde ALSUM | acercarle una convocatoria con enfoque profesional y alto valor para nuestra red de aliados y decisores."
         ),
         "Seguimiento institucional": (
             f"Buen dia, {row['Nombre']}.\n\n"
-            "Con un atento saludo, compartimos esta comunicacion desde ALSUM Analytics | Estrategia 360 como parte de nuestro seguimiento institucional y relacionamiento con actores clave del sector."
+            "Con un atento saludo, compartimos esta comunicacion desde ALSUM | como parte de nuestro seguimiento institucional y relacionamiento con actores clave del sector."
         ),
     }
 
